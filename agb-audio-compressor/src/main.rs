@@ -1,8 +1,7 @@
-use hound;
-use std::{
-    env,
-    ops::{Add, Sub},
-};
+mod sample;
+use sample::{Sample, USample};
+
+use std::env;
 
 fn mu(x: f64, mu: f64) -> f64 {
     x.signum() * ((mu * x.abs()).ln_1p() / mu.ln_1p())
@@ -24,7 +23,7 @@ fn compress<'a>(samples: impl Iterator<Item = &'a Sample>, m: f64) -> (Vec<USamp
     let mut current_error = 0;
     let mut sample_count = 0;
 
-    let mut previous_sample = Sample(0, 0);
+    let mut previous_sample = Sample::new(0, 0);
 
     let mu_table: Vec<_> = (-128..=127)
         .map(|x| (mu(x as f64 / 128.0, m) * 8.0).floor() + 8.0)
@@ -64,7 +63,7 @@ fn main() {
         .map(|sample| sample.unwrap())
         .collect::<Vec<_>>()
         .chunks_exact(2)
-        .map(|samples| Sample(samples[0], samples[1]))
+        .map(|samples| Sample::new(samples[0], samples[1]))
         .collect();
 
     let mut best_mu = 0f64;
@@ -91,76 +90,16 @@ fn main() {
 
     let mut statistics = [0; 16];
     for compressed_sample in best_compressed.iter() {
-        statistics[compressed_sample.0 as usize] += 1;
-        statistics[compressed_sample.1 as usize] += 1;
+        statistics[compressed_sample.l()] += 1;
+        statistics[compressed_sample.r()] += 1;
     }
     println!("Compressed statistics: {:?}", statistics);
 
-    let mut current_sample = Sample(0, 0);
+    let mut current_sample = Sample::new(0, 0);
     for compressed_sample in best_compressed.iter() {
         current_sample = current_sample + compressed_sample.unmu(&unmu_table);
 
-        writer.write_sample(current_sample.0).unwrap();
-        writer.write_sample(current_sample.1).unwrap();
-    }
-}
-
-#[derive(Clone, Copy)]
-struct Sample(i8, i8);
-
-impl Add<Sample> for Sample {
-    type Output = Self;
-
-    fn add(self, other: Self) -> Self {
-        Self(self.0 + other.0, self.1 + other.1)
-    }
-}
-
-impl Sub<Sample> for Sample {
-    type Output = Self;
-
-    fn sub(self, other: Self) -> Self {
-        Self(self.0 - other.0, self.1 - other.1)
-    }
-}
-
-impl Sample {
-    fn mu(&self, mu_table: &[u8]) -> USample {
-        USample(
-            mu_table[(self.0 as i32 + 128) as usize],
-            mu_table[(self.1 as i32 + 128) as usize],
-        )
-    }
-
-    fn hypot(&self) -> u64 {
-        let x = self.0.unsigned_abs() as u64;
-        let y = self.1.unsigned_abs() as u64;
-
-        x * x + y * y
-    }
-}
-
-#[derive(Clone, Copy)]
-struct USample(u8, u8);
-
-impl Add<USample> for USample {
-    type Output = Self;
-
-    fn add(self, other: Self) -> Self {
-        Self(self.0 + other.0, self.1 + other.1)
-    }
-}
-
-impl Sub<USample> for USample {
-    type Output = Self;
-
-    fn sub(self, other: Self) -> Self {
-        Self(self.0 - other.0, self.1 - other.1)
-    }
-}
-
-impl USample {
-    fn unmu(&self, unmu_table: &[i8]) -> Sample {
-        Sample(unmu_table[self.0 as usize], unmu_table[self.1 as usize])
+        writer.write_sample(current_sample.l()).unwrap();
+        writer.write_sample(current_sample.r()).unwrap();
     }
 }
