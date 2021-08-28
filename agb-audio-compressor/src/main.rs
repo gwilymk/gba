@@ -1,21 +1,10 @@
 mod sample;
 use sample::{Sample, USample};
 
+mod mu_table;
+use mu_table::MuTable;
+
 use std::env;
-
-fn mu(x: f64, mu: f64) -> f64 {
-    x.signum() * ((mu * x.abs()).ln_1p() / mu.ln_1p())
-}
-
-fn muinv(x: f64, mu: f64) -> f64 {
-    x.signum() * ((mu + 1.0).powf(x.abs()) - 1.0) / mu
-}
-
-fn get_unmu_table(m: f64) -> Vec<i8> {
-    (-8..=7)
-        .map(|x| (muinv((x as f64) / 8.0, m) * 128.0).ceil() as i8)
-        .collect()
-}
 
 fn compress<'a>(samples: impl Iterator<Item = &'a Sample>, m: f64) -> (Vec<USample>, f64) {
     let mut compressed = vec![];
@@ -25,11 +14,7 @@ fn compress<'a>(samples: impl Iterator<Item = &'a Sample>, m: f64) -> (Vec<USamp
 
     let mut previous_sample = Sample::new(0, 0);
 
-    let mu_table: Vec<_> = (-128..=127)
-        .map(|x| (mu(x as f64 / 128.0, m) * 8.0).floor() + 8.0)
-        .map(|x| x as u8)
-        .collect();
-    let unmu_table: Vec<_> = get_unmu_table(m);
+    let mu_table = MuTable::new(m);
 
     for &sample in samples {
         let difference = sample - previous_sample;
@@ -37,7 +22,7 @@ fn compress<'a>(samples: impl Iterator<Item = &'a Sample>, m: f64) -> (Vec<USamp
         let mued_difference = difference.mu(&mu_table);
         compressed.push(mued_difference);
 
-        previous_sample = previous_sample + mued_difference.unmu(&unmu_table);
+        previous_sample = previous_sample + mued_difference.unmu(&mu_table);
 
         current_error += (previous_sample - sample).hypot();
         sample_count += 2;
@@ -84,9 +69,9 @@ fn main() {
     }
 
     println!("Best mu: {}, best rms: {}", best_mu, best_rms);
-    let unmu_table = get_unmu_table(best_mu as f64);
+    let mu_table = MuTable::new(best_mu);
 
-    println!("Mu table: {:?}", unmu_table);
+    println!("Mu table: {:?}", mu_table.unmu_table());
 
     let mut statistics = [0; 16];
     for compressed_sample in best_compressed.iter() {
@@ -97,7 +82,7 @@ fn main() {
 
     let mut current_sample = Sample::new(0, 0);
     for compressed_sample in best_compressed.iter() {
-        current_sample = current_sample + compressed_sample.unmu(&unmu_table);
+        current_sample = current_sample + compressed_sample.unmu(&mu_table);
 
         writer.write_sample(current_sample.l()).unwrap();
         writer.write_sample(current_sample.r()).unwrap();

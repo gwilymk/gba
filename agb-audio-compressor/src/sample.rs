@@ -1,3 +1,4 @@
+use super::MuTable;
 use std::ops::{Add, Sub};
 
 #[derive(Clone, Copy)]
@@ -24,11 +25,8 @@ impl Sample {
         Self(l, r)
     }
 
-    pub fn mu(&self, mu_table: &[u8]) -> USample {
-        USample(
-            mu_table[(self.0 as i32 + 128) as usize],
-            mu_table[(self.1 as i32 + 128) as usize],
-        )
+    pub fn mu(&self, mu_table: &MuTable) -> USample {
+        USample(mu_table.mu(self.0), mu_table.mu(self.1))
     }
 
     pub fn hypot(&self) -> u64 {
@@ -67,8 +65,8 @@ impl Sub<USample> for USample {
 }
 
 impl USample {
-    pub fn unmu(&self, unmu_table: &[i8]) -> Sample {
-        Sample(unmu_table[self.0 as usize], unmu_table[self.1 as usize])
+    pub fn unmu(&self, mu_table: &MuTable) -> Sample {
+        Sample(mu_table.unmu(self.0), mu_table.unmu(self.1))
     }
 
     pub fn l(&self) -> usize {
