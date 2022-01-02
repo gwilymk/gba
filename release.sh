@@ -43,6 +43,10 @@ case "$PROJECT" in
         DIRECTORY="agb-macros"
         TAGNAME="agb-macros/v$VERSION"
         ;;
+    agb-xm)
+        DIRECTORY="agb-xm"
+        TAGNAME="agb-xm/v$VERSION"
+        ;;
     mgba-test-runner)
         DIRECTORY="mgba-test-runner"
         TAGNAME="mgba-test-runner/v$VERSION"
