@@ -7,6 +7,17 @@ pub struct Header<'a> {
     pub tracker_name: &'a [u8],
 
     pub version_number: u16,
+
+    pub song_length: u16,
+    pub song_restart_pos: u16,
+    pub num_channels: u16,
+    pub num_patterns: u16,
+    pub num_instruments: u16,
+    pub flags: u16,
+    pub default_tempo: u16,
+    pub default_bpm: u16,
+
+    pub pattern_order_table: &'a [u8],
 }
 
 #[non_exhaustive]
@@ -59,12 +70,28 @@ fn parse_header(xm: &'_ [u8]) -> Result<(Header<'_>, &'_ [u8]), XmError> {
         .position(|&c| c == 0)
         .unwrap_or(TRACKER_NAME_LENGTH)];
 
-    let (version_number, xm) = xm.split_at(2);
-    let version_number = u16::from_le_bytes(version_number.try_into().unwrap());
+    let (version_number, xm) = read_u16(xm);
 
     if version_number != 0x0104 {
         return Err(XmError::UnsupportedVersion(version_number));
     }
+
+    let (header_size, xm) = xm.split_at(4);
+    let header_size = u32::from_le_bytes(header_size.try_into().unwrap()) as usize;
+
+    let xm_after_header = &xm[header_size..];
+
+    let (song_length, xm) = read_u16(xm);
+    let (song_restart_pos, xm) = read_u16(xm);
+    let (num_channels, xm) = read_u16(xm);
+    let (num_patterns, xm) = read_u16(xm);
+    let (num_instruments, xm) = read_u16(xm);
+    let (flags, xm) = read_u16(xm);
+    let (default_tempo, xm) = read_u16(xm);
+    let (default_bpm, xm) = read_u16(xm);
+
+    const PATTERN_ORDER_TABLE_LENGTH: usize = 256;
+    let (pattern_order_table, xm) = xm.split_at(PATTERN_ORDER_TABLE_LENGTH);
 
     Ok((
         Header {
@@ -72,7 +99,24 @@ fn parse_header(xm: &'_ [u8]) -> Result<(Header<'_>, &'_ [u8]), XmError> {
             tracker_name,
 
             version_number,
+
+            song_length,
+            song_restart_pos,
+            num_channels,
+            num_patterns,
+            num_instruments,
+            flags,
+            default_tempo,
+            default_bpm,
+
+            pattern_order_table,
         },
-        xm,
+        xm_after_header,
     ))
+}
+
+fn read_u16(xm: &'_ [u8]) -> (u16, &'_ [u8]) {
+    let (value, xm) = xm.split_at(2);
+    let value = u16::from_le_bytes(value.try_into().unwrap());
+    return (value, xm);
 }
