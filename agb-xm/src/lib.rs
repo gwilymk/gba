@@ -2,11 +2,17 @@
 
 #[non_exhaustive]
 #[derive(Debug)]
-pub struct Song<'a> {
+pub struct Header<'a> {
     pub module_name: &'a [u8],
     pub tracker_name: &'a [u8],
 
     pub version_number: u16,
+}
+
+#[non_exhaustive]
+#[derive(Debug)]
+pub struct Song<'a> {
+    pub header: Header<'a>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,9 +66,11 @@ pub fn parse(xm: &'_ [u8]) -> Result<Song<'_>, XmError> {
     }
 
     Ok(Song {
-        module_name,
-        tracker_name,
+        header: Header {
+            module_name,
+            tracker_name,
 
-        version_number,
+            version_number,
+        },
     })
 }
