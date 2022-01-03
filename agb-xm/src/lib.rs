@@ -21,9 +21,26 @@ pub struct Header<'a> {
 }
 
 #[non_exhaustive]
+#[derive(Debug, Default)]
+pub struct Note {
+    pub note: u8,
+    pub instrument: u8,
+    pub volume: u8,
+    pub effect: u8,
+    pub parameter: u8,
+}
+
+#[non_exhaustive]
+#[derive(Debug)]
+pub struct Pattern {
+    pub notes: Vec<Note>,
+}
+
+#[non_exhaustive]
 #[derive(Debug)]
 pub struct Song<'a> {
     pub header: Header<'a>,
+    pub patterns: Vec<Pattern>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,12 +48,23 @@ pub enum XmError {
     HeaderTooShort,
     InvalidHeader,
     UnsupportedVersion(u16),
+    InvalidPatternPackingType(u8),
+    InvalidPacking { actual: u16, expected: u16 },
 }
 
 pub fn parse(xm: &'_ [u8]) -> Result<Song<'_>, XmError> {
     let (header, xm) = parse_header(xm)?;
 
-    Ok(Song { header })
+    let mut xm = xm;
+    let mut patterns = vec![];
+    for _ in 0..header.num_patterns {
+        let (pattern, next_xm) = parse_pattern(xm, header.num_channels)?;
+        xm = next_xm;
+
+        patterns.push(pattern);
+    }
+
+    Ok(Song { header, patterns })
 }
 
 fn parse_header(xm: &'_ [u8]) -> Result<(Header<'_>, &'_ [u8]), XmError> {
@@ -79,7 +107,7 @@ fn parse_header(xm: &'_ [u8]) -> Result<(Header<'_>, &'_ [u8]), XmError> {
     let (header_size, xm) = xm.split_at(4);
     let header_size = u32::from_le_bytes(header_size.try_into().unwrap()) as usize;
 
-    let xm_after_header = &xm[header_size..];
+    let xm_after_header = &xm[header_size - 4..];
 
     let (song_length, xm) = read_u16(xm);
     let (song_restart_pos, xm) = read_u16(xm);
@@ -115,8 +143,79 @@ fn parse_header(xm: &'_ [u8]) -> Result<(Header<'_>, &'_ [u8]), XmError> {
     ))
 }
 
+fn parse_pattern(xm: &'_ [u8], num_channels: u16) -> Result<(Pattern, &'_ [u8]), XmError> {
+    let (pattern_header_length, xm) = read_u32(xm);
+
+    let (packing_type, xm) = read_u8(xm);
+    if packing_type != 0 {
+        return Err(XmError::InvalidPatternPackingType(packing_type));
+    }
+
+    let (num_rows, xm) = read_u16(xm);
+
+    let (packed_data_size, xm) = read_u16(xm);
+
+    let xm = &xm[(pattern_header_length - 9) as usize..];
+
+    let mut notes = Vec::with_capacity((num_rows * num_channels) as usize);
+    let mut xm_iter = xm[..packed_data_size as usize].iter();
+    while let Some(&dbyte) = xm_iter.next() {
+        let mut note = Note::default();
+
+        if dbyte & 0x80 != 0 {
+            if dbyte & 0x01 != 0 {
+                note.note = *xm_iter.next().unwrap();
+            }
+
+            if dbyte & 0x02 != 0 {
+                note.instrument = *xm_iter.next().unwrap();
+            }
+
+            if dbyte & 0x04 != 0 {
+                note.volume = *xm_iter.next().unwrap();
+            }
+
+            if dbyte & 0x08 != 0 {
+                note.effect = *xm_iter.next().unwrap();
+            }
+
+            if dbyte & 0x10 != 0 {
+                note.parameter = *xm_iter.next().unwrap();
+            }
+        } else {
+            note.note = dbyte;
+            note.instrument = *xm_iter.next().unwrap();
+            note.volume = *xm_iter.next().unwrap();
+            note.effect = *xm_iter.next().unwrap();
+            note.parameter = *xm_iter.next().unwrap();
+        }
+
+        notes.push(note);
+    }
+
+    if notes.len() != (num_rows * num_channels).into() {
+        return Err(XmError::InvalidPacking {
+            actual: notes.len() as u16,
+            expected: num_rows * num_channels,
+        });
+    }
+
+    Ok((Pattern { notes }, &xm[packed_data_size as usize..]))
+}
+
+fn read_u8(xm: &'_ [u8]) -> (u8, &'_ [u8]) {
+    let (value, xm) = xm.split_at(1);
+    (value[0], xm)
+}
+
 fn read_u16(xm: &'_ [u8]) -> (u16, &'_ [u8]) {
     let (value, xm) = xm.split_at(2);
     let value = u16::from_le_bytes(value.try_into().unwrap());
-    return (value, xm);
+    (value, xm)
+}
+
+fn read_u32(xm: &'_ [u8]) -> (u32, &'_ [u8]) {
+    let (value, xm) = xm.split_at(4);
+    let value = u32::from_le_bytes(value.try_into().unwrap());
+    (value, xm)
 }

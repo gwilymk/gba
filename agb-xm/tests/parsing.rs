@@ -12,7 +12,7 @@ fn can_parse_algar_ninja_on_speed_header() {
     assert_eq!(parsed.header.song_length, 0x30);
     assert_eq!(parsed.header.song_restart_pos, 0);
     assert_eq!(parsed.header.num_channels, 4);
-    assert_eq!(parsed.header.num_patterns, 0x2f);
+    assert_eq!(parsed.header.num_patterns, 0x26);
     assert_eq!(parsed.header.num_instruments, 15);
     assert_eq!(parsed.header.flags, 1);
     assert_eq!(parsed.header.default_tempo, 0x4);
