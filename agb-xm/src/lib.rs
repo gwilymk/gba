@@ -38,6 +38,64 @@ pub struct Pattern {
 
 #[non_exhaustive]
 #[derive(Debug)]
+pub struct Sample<'a> {
+    pub loop_start: u32,
+    pub loop_length: u32,
+
+    pub volume: u8,
+    pub fine_tune: i8,
+    pub sample_type: u8,
+    pub panning: u8,
+
+    pub relative_note: u8,
+    pub name: &'a [u8],
+}
+
+#[non_exhaustive]
+#[derive(Debug)]
+pub struct EnvelopePoint {
+    pub frame_number: u16,
+    pub value: u16,
+}
+
+#[non_exhaustive]
+#[derive(Debug)]
+pub struct Envelope {
+    pub points: Vec<EnvelopePoint>,
+    pub loop_start: u8,
+    pub loop_end: u8,
+    pub sustain: u8,
+    pub envelope_type: u8,
+}
+
+#[non_exhaustive]
+#[derive(Debug)]
+pub struct SampleHeader<'a> {
+    pub sample_number: &'a [u8; 96],
+
+    pub volume_envelope: Envelope,
+    pub panning_envelope: Envelope,
+
+    pub vibrato_type: u8,
+    pub vibrato_sweep: u8,
+    pub vibrato_depth: u8,
+    pub vibrato_rate: u8,
+
+    pub volume_fadeout: u16,
+}
+
+#[non_exhaustive]
+#[derive(Debug)]
+pub struct Instrument<'a> {
+    pub name: &'a [u8],
+    pub instrument_type: u8,
+    pub samples: Vec<Sample<'a>>,
+
+    pub sample_header: Option<SampleHeader<'a>>,
+}
+
+#[non_exhaustive]
+#[derive(Debug)]
 pub struct Song<'a> {
     pub header: Header<'a>,
     pub patterns: Vec<Pattern>,
