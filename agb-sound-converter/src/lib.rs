@@ -84,6 +84,26 @@ pub fn include_wav(input: TokenStream) -> TokenStream {
     TokenStream::from(result)
 }
 
+#[proc_macro]
+pub fn include_xm(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as syn::LitStr);
+
+    let filename = input.value();
+
+    let root = std::env::var("CARGO_MANIFEST_DIR").expect("Failed to get cargo manifest dir");
+    let path = Path::new(&root).join(&*filename);
+
+    let include_path = path.to_string_lossy();
+
+    let result = quote! {
+        {
+            const _: &[u8] = include_bytes!(#include_path);
+        }
+    };
+
+    TokenStream::from(result)
+}
+
 fn samples_from_reader<'a, R>(reader: hound::WavReader<R>) -> Box<dyn Iterator<Item = u8> + 'a>
 where
     R: std::io::Read + 'a,
