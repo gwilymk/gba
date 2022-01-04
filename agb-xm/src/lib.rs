@@ -38,6 +38,13 @@ pub struct Pattern {
 
 #[non_exhaustive]
 #[derive(Debug)]
+pub enum SampleData {
+    Bits8(Vec<i8>),
+    Bits16(Vec<i16>),
+}
+
+#[non_exhaustive]
+#[derive(Debug)]
 pub struct Sample<'a> {
     pub loop_start: u32,
     pub loop_length: u32,
@@ -49,6 +56,8 @@ pub struct Sample<'a> {
 
     pub relative_note: u8,
     pub name: &'a [u8],
+
+    pub sample_data: SampleData,
 }
 
 #[non_exhaustive]
@@ -99,6 +108,7 @@ pub struct Instrument<'a> {
 pub struct Song<'a> {
     pub header: Header<'a>,
     pub patterns: Vec<Pattern>,
+    pub instruments: Vec<Instrument<'a>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -122,7 +132,19 @@ pub fn parse(xm: &'_ [u8]) -> Result<Song<'_>, XmError> {
         patterns.push(pattern);
     }
 
-    Ok(Song { header, patterns })
+    let mut instruments = vec![];
+    for _ in 0..header.num_instruments {
+        let (instrument, next_xm) = parse_instrument(xm)?;
+        xm = next_xm;
+
+        instruments.push(instrument);
+    }
+
+    Ok(Song {
+        header,
+        patterns,
+        instruments,
+    })
 }
 
 fn parse_header(xm: &'_ [u8]) -> Result<(Header<'_>, &'_ [u8]), XmError> {
@@ -259,6 +281,180 @@ fn parse_pattern(xm: &'_ [u8], num_channels: u16) -> Result<(Pattern, &'_ [u8]),
     }
 
     Ok((Pattern { notes }, &xm[packed_data_size as usize..]))
+}
+
+fn parse_instrument(xm: &'_ [u8]) -> Result<(Instrument<'_>, &'_ [u8]), XmError> {
+    let (instrument_header_size, xm) = read_u32(xm);
+    let after_instrument = &xm[(instrument_header_size - 4) as usize..];
+
+    const INSTRUMENT_NAME_LENGTH: usize = 22;
+    let (instrument_name, xm) = xm.split_at(INSTRUMENT_NAME_LENGTH);
+
+    let (instrument_type, xm) = read_u8(xm);
+    let (num_samples, xm) = read_u16(xm);
+
+    let (sample_header, xm) = if num_samples > 0 {
+        let (sample_header_size, xm) = read_u32(xm);
+        let after_sample_header = &xm[(sample_header_size - 4) as usize..];
+        let (sample_number, xm) = xm.split_at(96);
+
+        let (volume_envelope_points, xm) = xm.split_at(48);
+        let (panning_envelope_points, xm) = xm.split_at(48);
+
+        let (num_volume_points, xm) = read_u8(xm);
+        let (num_panning_points, xm) = read_u8(xm);
+
+        let (volume_sustain, xm) = read_u8(xm);
+        let (volume_loop_start, xm) = read_u8(xm);
+        let (volume_loop_end, xm) = read_u8(xm);
+
+        let (panning_sustain, xm) = read_u8(xm);
+        let (panning_loop_start, xm) = read_u8(xm);
+        let (panning_loop_end, xm) = read_u8(xm);
+
+        let (volume_type, xm) = read_u8(xm);
+        let (panning_type, xm) = read_u8(xm);
+
+        let (vibrato_type, xm) = read_u8(xm);
+        let (vibrato_sweep, xm) = read_u8(xm);
+        let (vibrato_depth, xm) = read_u8(xm);
+        let (vibrato_rate, xm) = read_u8(xm);
+
+        let (volume_fadeout, xm) = read_u16(xm);
+        let (_reserved, _xm) = read_u16(xm);
+
+        (
+            Some(SampleHeader {
+                sample_number: sample_number.try_into().unwrap(),
+                volume_envelope: Envelope {
+                    points: volume_envelope_points
+                        .chunks_exact(4)
+                        .take(num_volume_points as usize)
+                        .map(|point| {
+                            let (frame_number, point) = read_u16(point);
+                            let (value, _) = read_u16(point);
+
+                            EnvelopePoint {
+                                frame_number,
+                                value,
+                            }
+                        })
+                        .collect(),
+                    loop_start: volume_loop_start,
+                    loop_end: volume_loop_end,
+                    sustain: volume_sustain,
+                    envelope_type: volume_type,
+                },
+                panning_envelope: Envelope {
+                    points: panning_envelope_points
+                        .chunks_exact(4)
+                        .take(num_panning_points as usize)
+                        .map(|point| {
+                            let (frame_number, point) = read_u16(point);
+                            let (value, _) = read_u16(point);
+
+                            EnvelopePoint {
+                                frame_number,
+                                value,
+                            }
+                        })
+                        .collect(),
+                    loop_start: panning_loop_start,
+                    loop_end: panning_loop_end,
+                    sustain: panning_sustain,
+                    envelope_type: panning_type,
+                },
+
+                vibrato_type,
+                vibrato_sweep,
+                vibrato_depth,
+                vibrato_rate,
+
+                volume_fadeout,
+            }),
+            after_sample_header,
+        )
+    } else {
+        (None, xm)
+    };
+
+    let mut samples = vec![];
+    let mut next_xm = after_instrument;
+
+    for _ in 0..num_samples {
+        let (sample_length, xm) = read_u32(next_xm);
+        let (sample_loop_start, xm) = read_u32(xm);
+        let (sample_loop_length, xm) = read_u32(xm);
+        let (volume, xm) = read_u8(xm);
+        let (fine_tune, xm) = read_u8(xm);
+
+        let (sample_type, xm) = read_u8(xm);
+
+        let (panning, xm) = read_u8(xm);
+        let (relative_note_number, xm) = read_u8(xm);
+        let (_reserved, xm) = read_u8(xm);
+
+        const SAMPLE_NAME_LENGTH: usize = 22;
+        let (sample_name, xm) = xm.split_at(SAMPLE_NAME_LENGTH);
+
+        let (sample_data, xm) = if sample_type & (1 << 4) == 0 {
+            // 8 bit
+            let mut sample_data = vec![];
+
+            let mut prev_value = 0i8;
+            for &point in xm.iter().take(sample_length as usize) {
+                let point = point as i8;
+                prev_value = prev_value.wrapping_add(point);
+                sample_data.push(prev_value);
+            }
+
+            (
+                SampleData::Bits8(sample_data),
+                &xm[sample_length as usize..],
+            )
+        } else {
+            // 16 bit
+            let mut sample_data = vec![];
+
+            let mut prev_value = 0i16;
+            for point in xm.chunks_exact(2).take((sample_length / 2) as usize) {
+                let (point, _) = read_u16(point);
+                let point = point as i16;
+                prev_value = prev_value.wrapping_add(point);
+                sample_data.push(prev_value);
+            }
+
+            (
+                SampleData::Bits16(sample_data),
+                &xm[sample_length as usize..],
+            )
+        };
+
+        samples.push(Sample {
+            name: sample_name,
+            loop_start: sample_loop_start,
+            loop_length: sample_loop_length,
+            volume,
+            panning,
+            fine_tune: fine_tune as i8,
+            sample_type,
+            relative_note: relative_note_number,
+
+            sample_data,
+        });
+
+        next_xm = xm;
+    }
+
+    Ok((
+        Instrument {
+            name: instrument_name,
+            instrument_type,
+            sample_header,
+            samples,
+        },
+        next_xm,
+    ))
 }
 
 fn read_u8(xm: &'_ [u8]) -> (u8, &'_ [u8]) {
