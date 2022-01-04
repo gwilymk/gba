@@ -121,7 +121,7 @@ pub enum XmError {
     InvalidPacking { actual: u16, expected: u16 },
 }
 
-pub fn parse(xm: &'_ [u8]) -> Result<Song<'_>, XmError> {
+pub fn parse(xm: &[u8]) -> Result<Song<'_>, XmError> {
     let (header, xm) = parse_header(xm)?;
 
     let mut xm = xm;
@@ -148,7 +148,7 @@ pub fn parse(xm: &'_ [u8]) -> Result<Song<'_>, XmError> {
     })
 }
 
-fn parse_header(xm: &'_ [u8]) -> Result<(Header<'_>, &'_ [u8]), XmError> {
+fn parse_header(xm: &[u8]) -> Result<(Header<'_>, &[u8]), XmError> {
     const HEADER_BASE_SIZE: usize = 64;
     if xm.len() < HEADER_BASE_SIZE {
         return Err(XmError::HeaderTooShort);
@@ -224,7 +224,7 @@ fn parse_header(xm: &'_ [u8]) -> Result<(Header<'_>, &'_ [u8]), XmError> {
     ))
 }
 
-fn parse_pattern(xm: &'_ [u8], num_channels: u16) -> Result<(Pattern, &'_ [u8]), XmError> {
+fn parse_pattern(xm: &[u8], num_channels: u16) -> Result<(Pattern, &[u8]), XmError> {
     let (pattern_header_length, xm) = read_u32(xm);
 
     let (packing_type, xm) = read_u8(xm);
@@ -284,7 +284,7 @@ fn parse_pattern(xm: &'_ [u8], num_channels: u16) -> Result<(Pattern, &'_ [u8]),
     Ok((Pattern { notes }, &xm[packed_data_size as usize..]))
 }
 
-fn parse_instrument(xm: &'_ [u8]) -> Result<(Instrument<'_>, &'_ [u8]), XmError> {
+fn parse_instrument(xm: &[u8]) -> Result<(Instrument<'_>, &[u8]), XmError> {
     let (instrument_header_size, xm) = read_u32(xm);
     let after_instrument = &xm[(instrument_header_size - 4) as usize..];
 
@@ -454,18 +454,18 @@ fn parse_instrument(xm: &'_ [u8]) -> Result<(Instrument<'_>, &'_ [u8]), XmError>
     ))
 }
 
-fn read_u8(xm: &'_ [u8]) -> (u8, &'_ [u8]) {
+fn read_u8(xm: &[u8]) -> (u8, &[u8]) {
     let (value, xm) = xm.split_at(1);
     (value[0], xm)
 }
 
-fn read_u16(xm: &'_ [u8]) -> (u16, &'_ [u8]) {
+fn read_u16(xm: &[u8]) -> (u16, &[u8]) {
     let (value, xm) = xm.split_at(2);
     let value = u16::from_le_bytes(value.try_into().unwrap());
     (value, xm)
 }
 
-fn read_u32(xm: &'_ [u8]) -> (u32, &'_ [u8]) {
+fn read_u32(xm: &[u8]) -> (u32, &[u8]) {
     let (value, xm) = xm.split_at(4);
     let value = u32::from_le_bytes(value.try_into().unwrap());
     (value, xm)
