@@ -1,3 +1,4 @@
+#![deny(clippy::all)]
 // Based on information from https://github.com/milkytracker/MilkyTracker/blob/master/resources/reference/xm-form.txt
 
 #[non_exhaustive]
@@ -199,7 +200,7 @@ fn parse_header(xm: &'_ [u8]) -> Result<(Header<'_>, &'_ [u8]), XmError> {
     let (default_bpm, xm) = read_u16(xm);
 
     const PATTERN_ORDER_TABLE_LENGTH: usize = 256;
-    let (pattern_order_table, xm) = xm.split_at(PATTERN_ORDER_TABLE_LENGTH);
+    let (pattern_order_table, _xm) = xm.split_at(PATTERN_ORDER_TABLE_LENGTH);
 
     Ok((
         Header {
@@ -293,9 +294,8 @@ fn parse_instrument(xm: &'_ [u8]) -> Result<(Instrument<'_>, &'_ [u8]), XmError>
     let (instrument_type, xm) = read_u8(xm);
     let (num_samples, xm) = read_u16(xm);
 
-    let (sample_header, xm) = if num_samples > 0 {
-        let (sample_header_size, xm) = read_u32(xm);
-        let after_sample_header = &xm[(sample_header_size - 4) as usize..];
+    let sample_header = if num_samples > 0 {
+        let (_sample_header_size, xm) = read_u32(xm);
         let (sample_number, xm) = xm.split_at(96);
 
         let (volume_envelope_points, xm) = xm.split_at(48);
@@ -323,59 +323,56 @@ fn parse_instrument(xm: &'_ [u8]) -> Result<(Instrument<'_>, &'_ [u8]), XmError>
         let (volume_fadeout, xm) = read_u16(xm);
         let (_reserved, _xm) = read_u16(xm);
 
-        (
-            Some(SampleHeader {
-                sample_number: sample_number.try_into().unwrap(),
-                volume_envelope: Envelope {
-                    points: volume_envelope_points
-                        .chunks_exact(4)
-                        .take(num_volume_points as usize)
-                        .map(|point| {
-                            let (frame_number, point) = read_u16(point);
-                            let (value, _) = read_u16(point);
+        Some(SampleHeader {
+            sample_number: sample_number.try_into().unwrap(),
+            volume_envelope: Envelope {
+                points: volume_envelope_points
+                    .chunks_exact(4)
+                    .take(num_volume_points as usize)
+                    .map(|point| {
+                        let (frame_number, point) = read_u16(point);
+                        let (value, _) = read_u16(point);
 
-                            EnvelopePoint {
-                                frame_number,
-                                value,
-                            }
-                        })
-                        .collect(),
-                    loop_start: volume_loop_start,
-                    loop_end: volume_loop_end,
-                    sustain: volume_sustain,
-                    envelope_type: volume_type,
-                },
-                panning_envelope: Envelope {
-                    points: panning_envelope_points
-                        .chunks_exact(4)
-                        .take(num_panning_points as usize)
-                        .map(|point| {
-                            let (frame_number, point) = read_u16(point);
-                            let (value, _) = read_u16(point);
+                        EnvelopePoint {
+                            frame_number,
+                            value,
+                        }
+                    })
+                    .collect(),
+                loop_start: volume_loop_start,
+                loop_end: volume_loop_end,
+                sustain: volume_sustain,
+                envelope_type: volume_type,
+            },
+            panning_envelope: Envelope {
+                points: panning_envelope_points
+                    .chunks_exact(4)
+                    .take(num_panning_points as usize)
+                    .map(|point| {
+                        let (frame_number, point) = read_u16(point);
+                        let (value, _) = read_u16(point);
 
-                            EnvelopePoint {
-                                frame_number,
-                                value,
-                            }
-                        })
-                        .collect(),
-                    loop_start: panning_loop_start,
-                    loop_end: panning_loop_end,
-                    sustain: panning_sustain,
-                    envelope_type: panning_type,
-                },
+                        EnvelopePoint {
+                            frame_number,
+                            value,
+                        }
+                    })
+                    .collect(),
+                loop_start: panning_loop_start,
+                loop_end: panning_loop_end,
+                sustain: panning_sustain,
+                envelope_type: panning_type,
+            },
 
-                vibrato_type,
-                vibrato_sweep,
-                vibrato_depth,
-                vibrato_rate,
+            vibrato_type,
+            vibrato_sweep,
+            vibrato_depth,
+            vibrato_rate,
 
-                volume_fadeout,
-            }),
-            after_sample_header,
-        )
+            volume_fadeout,
+        })
     } else {
-        (None, xm)
+        None
     };
 
     let mut samples = vec![];
