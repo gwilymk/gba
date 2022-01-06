@@ -17,6 +17,8 @@ const FREQUENCY: u32 = 10512;
 #[cfg(feature = "freq18157")]
 const FREQUENCY: u32 = 18157;
 
+mod xm_generator;
+
 #[proc_macro]
 pub fn include_wav(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as syn::LitStr);
@@ -93,15 +95,14 @@ pub fn include_xm(input: TokenStream) -> TokenStream {
     let root = std::env::var("CARGO_MANIFEST_DIR").expect("Failed to get cargo manifest dir");
     let path = Path::new(&root).join(&*filename);
 
-    let include_path = path.to_string_lossy();
+    let _include_path = path.to_string_lossy(); // TODO correctly implement include_bytes! for this file
 
-    let result = quote! {
-        {
-            const _: &[u8] = include_bytes!(#include_path);
-        }
-    };
+    let xm_content = fs::read(&path)
+        .unwrap_or_else(|err| panic!("Failed to read file {}, {}", path.to_string_lossy(), err));
 
-    TokenStream::from(result)
+    let xm_code = xm_generator::generate(&xm_content);
+
+    TokenStream::from(xm_code)
 }
 
 fn samples_from_reader<'a, R>(reader: hound::WavReader<R>) -> Box<dyn Iterator<Item = u8> + 'a>

@@ -27,6 +27,7 @@ pub struct Mixer<'a> {
     timer: &'a mut Timer,
 }
 
+#[derive(Debug, Copy, Clone)]
 pub struct ChannelId(usize, i32);
 
 impl<'a> Mixer<'a> {

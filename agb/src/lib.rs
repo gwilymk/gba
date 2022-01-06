@@ -133,6 +133,7 @@ pub use agb_image_converter::include_gfx;
 pub use agb_macros::entry;
 
 pub use agb_sound_converter::include_wav;
+pub use agb_sound_converter::include_xm;
 
 #[cfg(feature = "alloc")]
 extern crate alloc;

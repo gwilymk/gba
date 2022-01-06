@@ -19,6 +19,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "agb-xm"
+version = "0.1.0"
+
+[[package]]
 name = "agb_image_converter"
 version = "0.6.0"
 dependencies = [
@@ -44,6 +48,7 @@ dependencies = [
 name = "agb_sound_converter"
 version = "0.1.0"
 dependencies = [
+ "agb-xm",
  "hound",
  "proc-macro2",
  "quote",

@@ -1,5 +1,6 @@
 mod hw;
 mod sw_mixer;
+pub mod tracker;
 
 pub use sw_mixer::ChannelId;
 pub use sw_mixer::Mixer;
