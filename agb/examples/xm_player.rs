@@ -26,11 +26,11 @@ fn main() -> ! {
     let mut frame_counter = 0i32;
     loop {
         vblank_provider.wait_for_vblank();
-        mixer.after_vblank();
         let before_mixing_cycles = timer.get_value();
+        mixer.after_vblank();
         xm_state.update(&mut mixer);
-        let after_mixing_cycles = timer.get_value();
         mixer.frame();
+        let after_mixing_cycles = timer.get_value();
 
         frame_counter = frame_counter.wrapping_add(1);
 

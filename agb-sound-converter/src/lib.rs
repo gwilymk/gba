@@ -95,12 +95,12 @@ pub fn include_xm(input: TokenStream) -> TokenStream {
     let root = std::env::var("CARGO_MANIFEST_DIR").expect("Failed to get cargo manifest dir");
     let path = Path::new(&root).join(&*filename);
 
-    let _include_path = path.to_string_lossy(); // TODO correctly implement include_bytes! for this file
+    let include_path = path.to_string_lossy(); // TODO correctly implement include_bytes! for this file
 
     let xm_content = fs::read(&path)
         .unwrap_or_else(|err| panic!("Failed to read file {}, {}", path.to_string_lossy(), err));
 
-    let xm_code = xm_generator::generate(&xm_content);
+    let xm_code = xm_generator::generate(&xm_content, &include_path, FREQUENCY);
 
     TokenStream::from(xm_code)
 }

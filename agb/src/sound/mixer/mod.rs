@@ -21,14 +21,14 @@ impl MixerController {
     }
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 enum SoundPriority {
     High,
     Low,
 }
 
+#[derive(Debug)]
 pub struct SoundChannel {
-    data: &'static [u8],
     pos: Num<usize, 8>,
     should_loop: bool,
 
@@ -41,6 +41,7 @@ pub struct SoundChannel {
     is_stereo: bool,
 
     priority: SoundPriority,
+    data: &'static [u8],
 }
 
 impl SoundChannel {
