@@ -26,9 +26,7 @@ modifications_fallback:
     mov r5, #0                   @ current index we're reading from
     ldr r8, agb_rs__buffer_size @ the number of steps left
 
-
 1:
-.macro mixer_add_loop
     add r4, r0, r5, asr #8    @ calculate the address of the next read from the sound buffer
     ldrsb r6, [r4]           @ load the current sound sample to r6
     add r5, r5, r2           @ calculate the position to read the next sample from
@@ -38,14 +36,8 @@ modifications_fallback:
     mla r4, r6, r7, r4       @ r4 += r6 * r7 (calculating both the left and right samples together)
 
     str r4, [r1], #4         @ store the new value, and increment the pointer
-.endm
 
-    mixer_add_loop
-    mixer_add_loop
-    mixer_add_loop
-    mixer_add_loop
-
-    subs r8, r8, #4          @ loop counter
+    subs r8, r8, #1          @ loop counter
     bne 1b                   @ jump back if we're done with the loop
 
     pop {r4-r8}
@@ -69,7 +61,7 @@ same_modification:
     mov r5, #0                   @ current index we're reading from
     ldr r8, agb_rs__buffer_size @ the number of steps left
 
-.macro mixer_add_loop_simple
+1:
     add r4, r0, r5, asr #8    @ calculate the address of the next read from the sound buffer
     ldrsb r6, [r4]            @ load the current sound sample to r6
     add r5, r5, r2           @ calculate the position to read the next sample from
@@ -81,15 +73,8 @@ same_modification:
     add r4, r4, r6, lsl r3   @ r4 += r6 << r3 (calculating both the left and right samples together)
 
     str r4, [r1], #4         @ store the new value, and increment the pointer
-.endm
 
-1:
-    mixer_add_loop_simple
-    mixer_add_loop_simple
-    mixer_add_loop_simple
-    mixer_add_loop_simple
-
-    subs r8, r8, #4          @ loop counter
+    subs r8, r8, #1          @ loop counter
     bne 1b                   @ jump back if we're done with the loop
 
     pop {r4-r8}
