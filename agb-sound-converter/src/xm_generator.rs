@@ -9,16 +9,12 @@ pub fn generate(xm_data: &[u8], file_path: &str, gba_frequency: u32) -> proc_mac
 
     let samples = song.instruments.iter().flat_map(|instrument| {
         instrument.samples.iter().map(|sample| {
-            let mut sample_data = match &sample.sample_data {
+            let sample_data = match &sample.sample_data {
                 SampleData::Bits8(bits) => bits.iter().map(|&bit| bit as u8).collect::<Vec<_>>(),
                 _ => unimplemented!("Currently only support 8 bit samples"),
             };
 
             let should_loop = sample.sample_type & 1 != 0;
-
-            if should_loop && sample_data.len() < 304 * 5 {
-                sample_data = sample_data.repeat(304 * 5 / sample_data.len() + 1);
-            }
 
             quote! {
                 Sample::new(&[#(#sample_data),*], #should_loop)
