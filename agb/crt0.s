@@ -76,3 +76,4 @@ b .Initialise_mb
 
 .include "interrupt_handler.s"
 .include "src/sound/mixer/mixer.s"
+.include "agbabi/memcpy.S"

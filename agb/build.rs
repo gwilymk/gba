@@ -4,6 +4,7 @@ fn main() {
     println!("cargo:rerun-if-changed=src/sound/mixer/mixer.s");
     println!("cargo:rerun-if-changed=src/asm_include.s");
     println!("cargo:rerun-if-changed=interrupt_handler.s");
+    println!("cargo:rerun-if-changed=agbabi/memcpy.S");
     println!("cargo:rerun-if-changed=gfx/test_logo.png");
 
     let out_file_name = "crt0.o";
