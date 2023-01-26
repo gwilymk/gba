@@ -39,7 +39,6 @@ pub struct Level {
 }
 
 mod map_tiles {
-
     use super::Level;
     pub const LEVELS: &[Level] = &[
         l1_1::get_level(),
@@ -56,47 +55,35 @@ mod map_tiles {
         l2_4::get_level(),
     ];
 
-    pub mod l1_1 {
-        include!(concat!(env!("OUT_DIR"), "/1-1.json.rs"));
-    }
-    pub mod l1_2 {
-        include!(concat!(env!("OUT_DIR"), "/1-2.json.rs"));
-    }
-    pub mod l1_3 {
-        include!(concat!(env!("OUT_DIR"), "/1-3.json.rs"));
-    }
-    pub mod l1_4 {
-        include!(concat!(env!("OUT_DIR"), "/1-4.json.rs"));
-    }
-    pub mod l1_5 {
-        include!(concat!(env!("OUT_DIR"), "/1-5.json.rs"));
-    }
-    pub mod l1_6 {
-        include!(concat!(env!("OUT_DIR"), "/1-6.json.rs"));
-    }
-    pub mod l1_7 {
-        include!(concat!(env!("OUT_DIR"), "/1-7.json.rs"));
-    }
-    pub mod l2_1 {
-        include!(concat!(env!("OUT_DIR"), "/2-1.json.rs"));
+    macro_rules! include_out_dir {
+        ($filename:expr) => {
+            include!(concat!(env!("OUT_DIR"), "/", $filename));
+        };
     }
 
-    pub mod l1_8 {
-        include!(concat!(env!("OUT_DIR"), "/1-8.json.rs"));
-    }
-    pub mod l2_2 {
-        include!(concat!(env!("OUT_DIR"), "/2-2.json.rs"));
-    }
-    pub mod l2_3 {
-        include!(concat!(env!("OUT_DIR"), "/2-3.json.rs"));
+    macro_rules! include_level {
+        ($mod_name:ident, $filename:tt) => {
+            pub mod $mod_name {
+                include_out_dir!(concat!($filename, ".json.rs"));
+            }
+        };
     }
 
-    pub mod l2_4 {
-        include!(concat!(env!("OUT_DIR"), "/2-4.json.rs"));
-    }
+    include_level!(l1_1, "1-1");
+    include_level!(l1_2, "1-2");
+    include_level!(l1_3, "1-3");
+    include_level!(l1_4, "1-4");
+    include_level!(l1_5, "1-5");
+    include_level!(l1_6, "1-6");
+    include_level!(l1_7, "1-7");
+    include_level!(l1_8, "1-8");
+    include_level!(l2_1, "2-1");
+    include_level!(l2_2, "2-2");
+    include_level!(l2_3, "2-3");
+    include_level!(l2_4, "2-4");
 
     pub mod tilemap {
-        include!(concat!(env!("OUT_DIR"), "/tilemap.rs"));
+        include_out_dir!("tilemap.rs");
     }
 }
 
