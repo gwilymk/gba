@@ -702,6 +702,7 @@ impl<'a, 'b> PlayingLevel<'a, 'b> {
 
         let mut player_dead = false;
 
+        let previous_hat_state = self.player.hat_state;
         self.player.update_frame(
             &self.input,
             controller,
@@ -711,12 +712,18 @@ impl<'a, 'b> PlayingLevel<'a, 'b> {
             sfx_player,
         );
 
+        let hat_state_for_enemy = if self.player.hat_state == HatState::WizardTowards {
+            HatState::WizardTowards
+        } else {
+            previous_hat_state
+        };
+
         for enemy in self.enemies.iter_mut() {
             match enemy.update(
                 controller,
                 self.background.level,
                 self.player.wizard.position,
-                self.player.hat_state,
+                hat_state_for_enemy,
                 self.timer,
                 sfx_player,
             ) {
