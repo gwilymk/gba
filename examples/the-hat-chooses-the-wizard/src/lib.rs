@@ -3,6 +3,7 @@
 #![cfg_attr(test, feature(custom_test_frameworks))]
 #![cfg_attr(test, reexport_test_harness_main = "test_main")]
 #![cfg_attr(test, test_runner(agb::test_runner::test_runner))]
+#![feature(allocator_api)]
 
 extern crate alloc;
 
@@ -19,7 +20,8 @@ use agb::{
     input::{self, Button, ButtonController},
     sound::mixer::Frequency,
 };
-use alloc::boxed::Box;
+use alloc::{boxed::Box, vec::Vec};
+use enemies::BoxedEnemy;
 
 mod enemies;
 mod level_display;
@@ -156,7 +158,7 @@ impl<'a> Entity<'a> {
 
     fn enemy_collision_at_point(
         &self,
-        enemies: &[enemies::Enemy],
+        enemies: &[enemies::BoxedEnemy],
         position: Vector2D<FixedNumberType>,
     ) -> bool {
         for enemy in enemies {
@@ -190,7 +192,7 @@ impl<'a> Entity<'a> {
     fn update_position_with_enemy(
         &mut self,
         level: &Level,
-        enemies: &[enemies::Enemy],
+        enemies: &[enemies::BoxedEnemy],
     ) -> (Vector2D<FixedNumberType>, bool) {
         let mut was_enemy_collision = false;
         let old_position = self.position;
@@ -371,7 +373,7 @@ impl<'a> Player<'a> {
         controller: &'a ObjectController,
         timer: i32,
         level: &Level,
-        enemies: &[enemies::Enemy],
+        enemies: &[enemies::BoxedEnemy],
         sfx_player: &mut sfx::SfxPlayer,
     ) {
         // throw or recall
@@ -590,7 +592,7 @@ struct PlayingLevel<'a, 'b> {
     input: ButtonController,
     player: Player<'a>,
 
-    enemies: [enemies::Enemy<'a>; 16],
+    enemies: Vec<BoxedEnemy<'a>>,
 }
 
 enum UpdateState {
@@ -607,16 +609,19 @@ impl<'a, 'b> PlayingLevel<'a, 'b> {
         foreground: &'a mut InfiniteScrolledMap<'b>,
         input: ButtonController,
     ) -> Self {
-        let mut e: [enemies::Enemy<'a>; 16] = Default::default();
-        let mut enemy_count = 0;
+        let mut e = Vec::with_capacity(level.slimes.len() + level.snails.len());
         for &slime in level.slimes {
-            e[enemy_count] = enemies::Enemy::new_slime(object_control, slime.into());
-            enemy_count += 1;
+            e.push(enemies::slime::Slime::new_boxed(
+                object_control,
+                slime.into(),
+            ));
         }
 
         for &snail in level.snails {
-            e[enemy_count] = enemies::Enemy::new_snail(object_control, snail.into());
-            enemy_count += 1;
+            e.push(enemies::snail::Snail::new_boxed(
+                object_control,
+                snail.into(),
+            ));
         }
 
         let start_pos: Vector2D<FixedNumberType> = level.start_pos.into();
@@ -687,8 +692,6 @@ impl<'a, 'b> PlayingLevel<'a, 'b> {
         self.timer += 1;
         self.input.update();
 
-        let mut player_dead = false;
-
         let previous_hat_state = self.player.hat_state;
         self.player.update_frame(
             &self.input,
@@ -705,7 +708,8 @@ impl<'a, 'b> PlayingLevel<'a, 'b> {
             previous_hat_state
         };
 
-        for enemy in self.enemies.iter_mut() {
+        let mut player_dead = false;
+        self.enemies.retain_mut(|enemy| {
             match enemy.update(
                 controller,
                 self.background.level,
@@ -716,8 +720,10 @@ impl<'a, 'b> PlayingLevel<'a, 'b> {
             ) {
                 enemies::EnemyUpdateState::KillPlayer => player_dead = true,
                 enemies::EnemyUpdateState::None => {}
-            }
-        }
+                enemies::EnemyUpdateState::Remove => return false,
+            };
+            true
+        });
 
         self.background.position = self.get_next_map_position();
         self.background.commit_position(vram);
