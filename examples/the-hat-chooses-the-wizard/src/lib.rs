@@ -75,7 +75,7 @@ mod map_tiles {
     macro_rules! include_level {
         ($mod_name:ident, $filename:tt) => {
             pub mod $mod_name {
-                include_out_dir!(concat!($filename, ".json.rs"));
+                include_out_dir!(concat!($filename, ".tmx.rs"));
             }
         };
     }

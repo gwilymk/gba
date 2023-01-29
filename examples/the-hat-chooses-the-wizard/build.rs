@@ -1,10 +1,11 @@
 const LEVELS: &[&str] = &[
-    "1-1.json", "1-2.json", "1-3.json", "1-4.json", "1-5.json", "1-6.json", "1-7.json", "1-8.json",
-    "2-4.json", "2-2.json", "2-1.json", "2-3.json",
+    "1-1.tmx", "1-2.tmx", "1-3.tmx", "1-4.tmx", "1-5.tmx", "1-6.tmx", "1-7.tmx", "1-8.tmx",
+    "2-4.tmx", "2-2.tmx", "2-1.tmx", "2-3.tmx",
 ];
 
 fn main() {
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR environment variable must be specified");
+    println!("cargo:rerun-if-changed=build.rs");
 
     tiled_export::export_tilemap(&out_dir).expect("Failed to export tilemap");
     for &level in LEVELS {
@@ -13,6 +14,8 @@ fn main() {
 }
 
 mod tiled_export {
+    use proc_macro2::{Delimiter, Group, Punct, Spacing, TokenStream};
+    use quote::{ToTokens, TokenStreamExt};
     use serde::Deserialize;
     use std::collections::HashMap;
     use std::fs::File;
@@ -71,114 +74,50 @@ mod tiled_export {
     pub fn export_level(out_dir: &str, level_file: &str) -> std::io::Result<()> {
         let filename = format!("map/{level_file}");
         println!("cargo:rerun-if-changed={filename}");
-        let file = File::open(filename)?;
-        let reader = BufReader::new(file);
-
-        let level: TiledLevel = serde_json::from_reader(reader)?;
-
         let output_file = File::create(format!("{out_dir}/{level_file}.rs"))?;
         let mut writer = BufWriter::new(output_file);
 
-        let layer_1 = level.layers[0]
-            .data
-            .as_ref()
-            .expect("Expected first layer to be a tile layer")
-            .iter()
-            .map(|id| get_map_id(*id).to_string())
-            .collect::<Vec<_>>()
-            .join(", ");
-        let layer_2 = level.layers[1]
-            .data
-            .as_ref()
-            .expect("Expected second layer to be a tile layer")
-            .iter()
-            .map(|id| get_map_id(*id).to_string())
-            .collect::<Vec<_>>()
-            .join(", ");
+        let level = load_level(&filename);
 
-        writeln!(&mut writer, "const WIDTH: u32 = {};", level.width)?;
-        writeln!(&mut writer, "const HEIGHT: u32 = {};", level.height)?;
-        writeln!(&mut writer, "const TILEMAP: &[u16] = &[{layer_1}];")?;
-        writeln!(&mut writer, "const BACKGROUND: &[u16] = &[{layer_2}];")?;
+        let width = &level.width;
+        let height = &level.height;
+        let foreground = &level.foreground;
+        let background = &level.background;
+        let snails = level.snails.iter().map(wrap_tuple);
+        let slimes = level.slimes.iter().map(wrap_tuple);
+        let stops = level.stops.iter().map(wrap_tuple);
+        let start = wrap_tuple(&level.start);
 
-        let objects = level.layers[2]
-            .objects
-            .as_ref()
-            .expect("Expected third layer to be an object layer")
-            .iter()
-            .map(|object| (&object.object_type, (object.x, object.y)));
-        let mut snails = vec![];
-        let mut slimes = vec![];
-        let mut enemy_stops = vec![];
-        let mut player_start = None;
+        let encoded = quote::quote!(
+            const WIDTH: u32 = #width;
+            const HEIGHT: u32 = #height;
+            const TILEMAP: &[u16] = &[#(#foreground),*];
+            const BACKGROUND: &[u16] = &[#(#background),*];
 
-        for (object_type, (x, y)) in objects {
-            match object_type.as_str() {
-                "Snail Spawn" => snails.push((x, y)),
-                "Slime Spawn" => slimes.push((x, y)),
-                "Player Start" => player_start = Some((x, y)),
-                "Enemy Stop" => enemy_stops.push((x, y)),
-                _ => panic!("Unknown object type {}", object_type),
-            }
-        }
+            const SNAILS: &[(i32, i32)] = &[#(#snails),*];
+            const SLIMES: &[(i32, i32)] = &[#(#slimes),*];
+            const ENEMY_STOPS: &[(i32, i32)] = &[#(#stops),*];
+            const START_POS: (i32, i32) = #start;
 
-        let player_start = player_start.expect("Need a start place for the player");
-
-        let slimes_str = slimes
-            .iter()
-            .map(|slime| format!("({}, {})", slime.0, slime.1))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let snails_str = snails
-            .iter()
-            .map(|slime| format!("({}, {})", slime.0, slime.1))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let enemy_stop_str = enemy_stops
-            .iter()
-            .map(|enemy_stop| format!("({}, {})", enemy_stop.0, enemy_stop.1))
-            .collect::<Vec<_>>()
-            .join(", ");
-
-        writeln!(
-            &mut writer,
-            "const SNAILS: &[(i32, i32)] = &[{snails_str}];",
-        )?;
-        writeln!(
-            &mut writer,
-            "const SLIMES: &[(i32, i32)] = &[{slimes_str}];",
-        )?;
-        writeln!(
-            &mut writer,
-            "const ENEMY_STOPS: &[(i32, i32)] = &[{enemy_stop_str}];",
-        )?;
-        writeln!(
-            &mut writer,
-            "const START_POS: (i32, i32) = ({}, {});",
-            player_start.0, player_start.1
-        )?;
-
-        writeln!(
-            &mut writer,
-            r#"
             use crate::Level;
             use agb::fixnum::Vector2D;
 
-            pub const fn get_level() -> Level {{
-                Level {{
+            pub const fn get_level() -> Level {
+                Level {
                     background: TILEMAP,
                     foreground: BACKGROUND,
-                    dimensions: Vector2D {{x: WIDTH, y: HEIGHT}},
+                    dimensions: Vector2D {x: WIDTH, y: HEIGHT},
                     collision: crate::map_tiles::tilemap::TILE_DATA,
-    
+
                     enemy_stops: ENEMY_STOPS,
                     slimes: SLIMES,
                     snails: SNAILS,
                     start_pos: START_POS,
-                }}
-            }}
-            "#
-        )?;
+                }
+            }
+        );
+
+        let _ = write!(writer, "{encoded}");
 
         Ok(())
     }
@@ -190,25 +129,116 @@ mod tiled_export {
         }
     }
 
-    #[derive(Deserialize)]
-    struct TiledLevel {
-        layers: Vec<TiledLayer>,
-        width: i32,
-        height: i32,
+    struct WrappedTuple<T>(T, T);
+
+    impl<T> ToTokens for WrappedTuple<T>
+    where
+        T: ToTokens,
+    {
+        fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+            let mut inner = TokenStream::new();
+            self.0.to_tokens(&mut inner);
+            inner.append(Punct::new(',', Spacing::Alone));
+            self.1.to_tokens(&mut inner);
+
+            tokens.append(Group::new(Delimiter::Parenthesis, inner));
+        }
     }
 
-    #[derive(Deserialize)]
-    struct TiledLayer {
-        data: Option<Vec<i32>>,
-        objects: Option<Vec<TiledObject>>,
+    fn wrap_tuple<T: Copy>(a: &(T, T)) -> WrappedTuple<T> {
+        WrappedTuple(a.0, a.1)
     }
 
-    #[derive(Deserialize)]
-    struct TiledObject {
-        #[serde(rename = "type")]
-        object_type: String,
-        x: i32,
-        y: i32,
+    fn load_level(level: &str) -> Level {
+        let mut loader = tiled::Loader::new();
+        let map = loader
+            .load_tmx_map(level)
+            .expect("should be able to load tiled level");
+
+        println!("Loading {level}");
+
+        let height = map.height;
+        let width = map.width;
+
+        let foreground = map.get_layer(0).expect("layer 1 (foreground) should exist");
+        let background = map.get_layer(1).expect("layer 2 (background) should exist");
+        let points = map.get_layer(2).expect("layer 0 (points) should exist");
+
+        let foreground = extract_tiles(foreground);
+        let background = extract_tiles(background);
+
+        let points = extract_points(points);
+
+        let mut snails = Vec::new();
+        let mut slimes = Vec::new();
+        let mut enemy_stops = Vec::new();
+
+        let mut start_pos = (0, 0);
+
+        for point in points {
+            match point.0.as_str() {
+                "Player Start" => start_pos = point.1,
+                "Slime Spawn" => slimes.push(point.1),
+                "Snail Spawn" => snails.push(point.1),
+                "Enemy Stop" => enemy_stops.push(point.1),
+                _ => panic!("unknown object {}", point.0),
+            }
+        }
+
+        Level {
+            width,
+            height,
+            background,
+            foreground,
+            slimes,
+            snails,
+            stops: enemy_stops,
+            start: start_pos,
+        }
+    }
+
+    fn extract_points(layer: tiled::Layer) -> impl Iterator<Item = (String, (i32, i32))> + '_ {
+        let layer = match layer.layer_type() {
+            tiled::LayerType::ObjectLayer(layer) => layer,
+            _ => panic!("expected a tile layer but got something other than a tile layer"),
+        };
+
+        layer
+            .objects()
+            .map(|o| (o.obj_type.clone(), (o.x as i32, o.y as i32)))
+    }
+
+    fn extract_tiles(layer: tiled::Layer) -> Vec<u16> {
+        let layer = match layer.layer_type() {
+            tiled::LayerType::TileLayer(layer) => layer,
+            _ => panic!("expected a tile layer but got something other than a tile layer"),
+        };
+        let width = layer.width().unwrap();
+        let height = layer.height().unwrap();
+
+        let mut tiles = Vec::with_capacity((width * height) as usize);
+
+        for y in 0..height {
+            for x in 0..width {
+                let tile = layer
+                    .get_tile(x as i32, y as i32)
+                    .map(|x| get_map_id((x.id() + 1) as i32))
+                    .unwrap_or(10);
+                tiles.push(tile as u16);
+            }
+        }
+        tiles
+    }
+
+    struct Level {
+        width: u32,
+        height: u32,
+        background: Vec<u16>,
+        foreground: Vec<u16>,
+        slimes: Vec<(i32, i32)>,
+        snails: Vec<(i32, i32)>,
+        stops: Vec<(i32, i32)>,
+        start: (i32, i32),
     }
 
     #[derive(Deserialize)]
