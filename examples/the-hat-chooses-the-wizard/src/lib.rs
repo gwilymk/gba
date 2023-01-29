@@ -28,6 +28,15 @@ mod level_display;
 mod sfx;
 mod splash_screen;
 
+mod entity;
+
+use entity::Entity;
+
+const GRAVITY: Vector2D<FixedNumberType> = Vector2D::new(
+    FixedNumberType::from_raw(0),
+    FixedNumberType::from_raw((1 << 10) / 16),
+);
+
 pub struct Level {
     background: &'static [u16],
     foreground: &'static [u16],
@@ -103,157 +112,6 @@ const HAT_SPIN_2: &Tag = TAG_MAP.get("HatSpin2");
 const HAT_SPIN_3: &Tag = TAG_MAP.get("HatSpin3");
 
 type FixedNumberType = FixedNum<10>;
-
-pub struct Entity<'a> {
-    sprite: Object<'a>,
-    position: Vector2D<FixedNumberType>,
-    velocity: Vector2D<FixedNumberType>,
-    collision_mask: Vector2D<u16>,
-}
-
-impl<'a> Entity<'a> {
-    pub fn new(object: &'a ObjectController, collision_mask: Vector2D<u16>) -> Self {
-        let dummy_sprite = object.sprite(WALKING.sprite(0));
-        let mut sprite = object.object(dummy_sprite);
-        sprite.set_priority(Priority::P1);
-        Entity {
-            sprite,
-            collision_mask,
-            position: (0, 0).into(),
-            velocity: (0, 0).into(),
-        }
-    }
-
-    fn something_at_point<T: Fn(i32, i32) -> bool>(
-        &self,
-        position: Vector2D<FixedNumberType>,
-        something_fn: T,
-    ) -> bool {
-        let left = (position.x - self.collision_mask.x as i32 / 2).floor() / 8;
-        let right = (position.x + self.collision_mask.x as i32 / 2 - 1).floor() / 8;
-        let top = (position.y - self.collision_mask.y as i32 / 2).floor() / 8;
-        let bottom = (position.y + self.collision_mask.y as i32 / 2 - 1).floor() / 8;
-
-        for x in left..=right {
-            for y in top..=bottom {
-                if something_fn(x, y) {
-                    return true;
-                }
-            }
-        }
-        false
-    }
-
-    fn collision_at_point(&self, level: &Level, position: Vector2D<FixedNumberType>) -> bool {
-        self.something_at_point(position, |x, y| level.collides(x, y))
-    }
-
-    fn killision_at_point(&self, level: &Level, position: Vector2D<FixedNumberType>) -> bool {
-        self.something_at_point(position, |x, y| level.kills(x, y))
-    }
-
-    fn completion_at_point(&self, level: &Level, position: Vector2D<FixedNumberType>) -> bool {
-        self.something_at_point(position, |x, y| level.wins(x, y))
-    }
-
-    fn enemy_collision_at_point(
-        &self,
-        enemies: &[enemies::BoxedEnemy],
-        position: Vector2D<FixedNumberType>,
-    ) -> bool {
-        for enemy in enemies {
-            if enemy.collides_with_hat(position) {
-                return true;
-            }
-        }
-        false
-    }
-
-    // returns the distance actually moved
-    fn update_position(&mut self, level: &Level) -> Vector2D<FixedNumberType> {
-        let old_position = self.position;
-        let x_velocity = (self.velocity.x, 0.into()).into();
-        if !self.collision_at_point(level, self.position + x_velocity) {
-            self.position += x_velocity;
-        } else {
-            self.position += self.binary_search_collision(level, (1, 0).into(), self.velocity.x);
-        }
-
-        let y_velocity = (0.into(), self.velocity.y).into();
-        if !self.collision_at_point(level, self.position + y_velocity) {
-            self.position += y_velocity;
-        } else {
-            self.position += self.binary_search_collision(level, (0, 1).into(), self.velocity.y);
-        }
-
-        self.position - old_position
-    }
-
-    fn update_position_with_enemy(
-        &mut self,
-        level: &Level,
-        enemies: &[enemies::BoxedEnemy],
-    ) -> (Vector2D<FixedNumberType>, bool) {
-        let mut was_enemy_collision = false;
-        let old_position = self.position;
-        let x_velocity = (self.velocity.x, 0.into()).into();
-
-        if !(self.collision_at_point(level, self.position + x_velocity)
-            || self.enemy_collision_at_point(enemies, self.position + x_velocity))
-        {
-            self.position += x_velocity;
-        } else if self.enemy_collision_at_point(enemies, self.position + x_velocity) {
-            self.position -= x_velocity;
-            was_enemy_collision = true;
-        }
-
-        let y_velocity = (0.into(), self.velocity.y).into();
-        if !(self.collision_at_point(level, self.position + y_velocity)
-            || self.enemy_collision_at_point(enemies, self.position + y_velocity))
-        {
-            self.position += y_velocity;
-        } else if self.enemy_collision_at_point(enemies, self.position + y_velocity) {
-            self.position -= y_velocity;
-            was_enemy_collision = true;
-        }
-
-        (self.position - old_position, was_enemy_collision)
-    }
-
-    fn binary_search_collision(
-        &self,
-        level: &Level,
-        unit_vector: Vector2D<FixedNumberType>,
-        initial: FixedNumberType,
-    ) -> Vector2D<FixedNumberType> {
-        let mut low: FixedNumberType = 0.into();
-        let mut high = initial;
-
-        let one: FixedNumberType = 1.into();
-        while (high - low).abs() > one / 8 {
-            let mid = (low + high) / 2;
-            let new_vel: Vector2D<FixedNumberType> = unit_vector * mid;
-
-            if self.collision_at_point(level, self.position + new_vel) {
-                high = mid;
-            } else {
-                low = mid;
-            }
-        }
-
-        unit_vector * low
-    }
-
-    fn commit_position(&mut self, offset: Vector2D<FixedNumberType>) {
-        let position = (self.position - offset).floor();
-        self.sprite.set_position(position - (8, 8).into());
-        if position.x < -8 || position.x > WIDTH + 8 || position.y < -8 || position.y > HEIGHT + 8 {
-            self.sprite.hide();
-        } else {
-            self.sprite.show();
-        }
-    }
-}
 
 struct Map<'a, 'b> {
     background: &'a mut InfiniteScrolledMap<'b>,
@@ -413,9 +271,7 @@ impl<'a> Player<'a> {
         }
 
         let was_on_ground = self.is_on_ground;
-        let is_on_ground = self
-            .wizard
-            .collision_at_point(level, self.wizard.position + (0, 1).into());
+        let is_on_ground = self.wizard.is_on_ground(level);
 
         if is_on_ground && !was_on_ground && self.wizard.velocity.y > 1.into() {
             sfx_player.land();
@@ -437,9 +293,8 @@ impl<'a> Player<'a> {
             } else {
                 self.wizard.velocity.x += FixedNumberType::new(input.x_tri() as i32) / 64;
                 self.wizard.velocity = self.wizard.velocity * 63 / 64;
-                let gravity: Vector2D<FixedNumberType> = (0, 1).into();
-                let gravity = gravity / 16;
-                self.wizard.velocity += gravity;
+
+                self.wizard.velocity += GRAVITY;
             }
 
             self.wizard.velocity = self.wizard.update_position(level);

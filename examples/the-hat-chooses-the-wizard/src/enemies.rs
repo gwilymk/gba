@@ -49,8 +49,13 @@ impl<'a> EnemyInfo<'a> {
                 .manhattan_distance()
                 < 8.into()
             {
-                self.entity.velocity = (0, 0).into();
+                self.entity.velocity.x = 0.into();
             }
+        }
+
+        let is_on_ground = self.entity.is_on_ground(level);
+        if !is_on_ground {
+            self.entity.velocity += crate::GRAVITY;
         }
 
         self.entity.update_position(level);
