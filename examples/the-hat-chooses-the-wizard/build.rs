@@ -14,8 +14,7 @@ fn main() {
 }
 
 mod tiled_export {
-    use proc_macro2::{Delimiter, Group, Punct, Spacing, TokenStream};
-    use quote::{ToTokens, TokenStreamExt};
+    use quote::ToTokens;
     use serde::Deserialize;
     use std::collections::HashMap;
     use std::fs::File;
@@ -136,12 +135,9 @@ mod tiled_export {
         T: ToTokens,
     {
         fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-            let mut inner = TokenStream::new();
-            self.0.to_tokens(&mut inner);
-            inner.append(Punct::new(',', Spacing::Alone));
-            self.1.to_tokens(&mut inner);
-
-            tokens.append(Group::new(Delimiter::Parenthesis, inner));
+            let t1 = &self.0;
+            let t2 = &self.1;
+            quote::quote!((#t1, #t2)).to_tokens(tokens);
         }
     }
 
