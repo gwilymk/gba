@@ -9,7 +9,7 @@ extern crate alloc;
 
 use agb::{
     display::{
-        object::{Graphics, Object, ObjectController, Tag, TagMap},
+        object::{Graphics, ObjectController, Tag, TagMap},
         tiled::{
             InfiniteScrolledMap, PartialUpdateStatus, RegularBackgroundSize, TileFormat, TileSet,
             TileSetting, TiledMap, VRamManager,
