@@ -14,9 +14,9 @@ const SLIME_JUMP: &Tag = TAG_MAP.get("Slime Jump");
 const SLIME_SPLAT: &Tag = TAG_MAP.get("Slime splat");
 
 enum SlimeState {
-    Idle,
-    Jumping(i32), // the start frame of the jumping animation
-    Dying(i32),   // the start frame of the dying animation
+    Idle(i32),
+    Jumping,
+    Dying(i32), // the start frame of the dying animation
 }
 
 pub struct Slime<'a> {
@@ -37,19 +37,23 @@ impl<'a> Enemy<'a> for Slime<'a> {
         let player_has_collided =
             (self.enemy_info.entity.position - player_pos).magnitude_squared() < (10 * 10).into();
 
-        match self.state {
-            SlimeState::Idle => {
+        match &mut self.state {
+            SlimeState::Idle(counter) => {
                 let offset = (timer / 16) as usize;
+
+                *counter += 1;
 
                 let frame = SLIME_IDLE.animation_sprite(offset);
                 let sprite = controller.sprite(frame);
 
                 self.enemy_info.entity.sprite.set_sprite(sprite);
 
-                if (self.enemy_info.entity.position - player_pos).magnitude_squared()
-                    < (64 * 64).into()
+                if *counter > 8
+                    && (self.enemy_info.entity.position - player_pos).magnitude_squared()
+                        < (64 * 64).into()
                 {
-                    self.state = SlimeState::Jumping(timer);
+                    sfx_player.slime_jump();
+                    self.state = SlimeState::Jumping;
 
                     let x_vel: FixedNumberType =
                         if self.enemy_info.entity.position.x > player_pos.x {
@@ -59,7 +63,8 @@ impl<'a> Enemy<'a> for Slime<'a> {
                         }
                         .into();
 
-                    self.enemy_info.entity.velocity = (x_vel / 4, 0.into()).into();
+                    self.enemy_info.entity.velocity =
+                        (x_vel / 4, FixedNumberType::new(-3) / 2).into();
                 }
 
                 if player_has_collided {
@@ -70,20 +75,18 @@ impl<'a> Enemy<'a> for Slime<'a> {
                     }
                 }
             }
-            SlimeState::Jumping(jumping_start_frame) => {
-                let offset = (timer - jumping_start_frame) as usize / 4;
-
-                if timer == jumping_start_frame + 1 {
-                    sfx_player.slime_jump();
-                }
-
-                if offset >= 7 {
+            SlimeState::Jumping => {
+                if self.enemy_info.entity.is_on_ground(level) {
                     self.enemy_info.entity.velocity = (0, 0).into();
-                    self.state = SlimeState::Idle;
+                    self.state = SlimeState::Idle(0);
                 } else {
-                    let frame = SLIME_JUMP.animation_sprite(offset);
-                    let sprite = controller.sprite(frame);
-
+                    let sprite =
+                        if self.enemy_info.entity.velocity.y.abs() > FixedNumberType::new(1) / 4 {
+                            SLIME_JUMP.sprite(1)
+                        } else {
+                            SLIME_JUMP.sprite(0)
+                        };
+                    let sprite = controller.sprite(sprite);
                     self.enemy_info.entity.sprite.set_sprite(sprite);
                 }
 
@@ -96,11 +99,11 @@ impl<'a> Enemy<'a> for Slime<'a> {
                 }
             }
             SlimeState::Dying(dying_start_frame) => {
-                if timer == dying_start_frame + 1 {
+                if timer == *dying_start_frame + 1 {
                     sfx_player.slime_death();
                 }
 
-                let offset = (timer - dying_start_frame) as usize / 4;
+                let offset = (timer - *dying_start_frame) as usize / 4;
                 self.enemy_info.entity.velocity = (0, 0).into();
 
                 if offset >= 4 {
@@ -131,8 +134,8 @@ impl<'a> Enemy<'a> for Slime<'a> {
 impl<'a> Slime<'a> {
     pub fn new(object: &'a ObjectController, start_pos: Vector2D<FixedNumberType>) -> Self {
         let slime = Slime {
-            enemy_info: EnemyInfo::new(object, start_pos, (14u16, 14u16).into()),
-            state: SlimeState::Idle,
+            enemy_info: EnemyInfo::new(object, start_pos, (12u16, 9u16).into()),
+            state: SlimeState::Idle(0),
         };
 
         slime
