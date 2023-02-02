@@ -58,7 +58,7 @@ impl<'a> EnemyInfo<'a> {
             self.entity.velocity += crate::GRAVITY;
         }
 
-        self.entity.update_position(level);
+        self.entity.velocity = self.entity.update_position(level);
     }
 
     fn commit(&mut self, background_offset: Vector2D<FixedNumberType>) {
