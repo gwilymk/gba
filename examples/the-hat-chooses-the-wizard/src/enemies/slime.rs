@@ -39,9 +39,9 @@ impl<'a> Enemy<'a> for Slime<'a> {
 
         match &mut self.state {
             SlimeState::Idle(counter) => {
-                let offset = (timer / 16) as usize;
-
                 *counter += 1;
+
+                let offset = ((*counter - 12) / 16) as usize;
 
                 let frame = SLIME_IDLE.animation_sprite(offset);
                 let sprite = controller.sprite(frame);
@@ -80,12 +80,7 @@ impl<'a> Enemy<'a> for Slime<'a> {
                     self.enemy_info.entity.velocity = (0, 0).into();
                     self.state = SlimeState::Idle(0);
                 } else {
-                    let sprite =
-                        if self.enemy_info.entity.velocity.y.abs() > FixedNumberType::new(1) / 4 {
-                            SLIME_JUMP.sprite(1)
-                        } else {
-                            SLIME_JUMP.sprite(0)
-                        };
+                    let sprite = SLIME_JUMP.sprite(1);
                     let sprite = controller.sprite(sprite);
                     self.enemy_info.entity.sprite.set_sprite(sprite);
                 }
