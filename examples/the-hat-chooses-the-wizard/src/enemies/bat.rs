@@ -1,6 +1,6 @@
 use agb::{
     display::object::{ObjectController, Tag},
-    fixnum::{num, Vector2D},
+    fixnum::Vector2D,
     InternalAllocator,
 };
 use alloc::boxed::Box;

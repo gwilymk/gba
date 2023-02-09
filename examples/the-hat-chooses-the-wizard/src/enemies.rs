@@ -15,9 +15,9 @@ pub enum EnemyType {
     Snail,
 }
 
-pub fn new_enemy<'a>(
+pub fn new_enemy(
     enemy_type: EnemyType,
-    object: &'a ObjectController,
+    object: &'_ ObjectController,
     start_pos: Vector2D<FixedNumberType>,
 ) -> BoxedEnemy {
     match enemy_type {
