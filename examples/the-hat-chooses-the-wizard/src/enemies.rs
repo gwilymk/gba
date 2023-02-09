@@ -8,6 +8,25 @@ pub mod snail;
 
 pub type BoxedEnemy<'a> = Box<dyn Enemy<'a> + 'a, InternalAllocator>;
 
+#[derive(Debug, Clone, Copy)]
+pub enum EnemyType {
+    Bat,
+    Slime,
+    Snail,
+}
+
+pub fn new_enemy<'a>(
+    enemy_type: EnemyType,
+    object: &'a ObjectController,
+    start_pos: Vector2D<FixedNumberType>,
+) -> BoxedEnemy {
+    match enemy_type {
+        EnemyType::Bat => bat::Bat::new_boxed(object, start_pos),
+        EnemyType::Slime => slime::Slime::new_boxed(object, start_pos),
+        EnemyType::Snail => snail::Snail::new_boxed(object, start_pos),
+    }
+}
+
 pub trait Enemy<'a> {
     fn collides_with_hat(&self, position: Vector2D<FixedNumberType>) -> bool;
     fn update(
@@ -29,6 +48,7 @@ pub enum EnemyUpdateState {
 }
 struct EnemyInfo<'a> {
     entity: Entity<'a>,
+    affected_by_gravity: bool,
 }
 
 impl<'a> EnemyInfo<'a> {
@@ -39,6 +59,7 @@ impl<'a> EnemyInfo<'a> {
     ) -> Self {
         let mut enemy_info = EnemyInfo {
             entity: Entity::new(object, collision),
+            affected_by_gravity: true,
         };
         enemy_info.entity.position = start_pos;
         enemy_info
@@ -54,9 +75,11 @@ impl<'a> EnemyInfo<'a> {
             }
         }
 
-        let is_on_ground = self.entity.is_on_ground(level);
-        if !is_on_ground {
-            self.entity.velocity += crate::GRAVITY;
+        if self.affected_by_gravity {
+            let is_on_ground = self.entity.is_on_ground(level);
+            if !is_on_ground {
+                self.entity.velocity += crate::GRAVITY;
+            }
         }
 
         self.entity.velocity = self.entity.update_position(level);

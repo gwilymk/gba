@@ -1,5 +1,5 @@
 use agb::{
-    display::object::{Object, ObjectController, Tag},
+    display::object::{ObjectController, Tag},
     fixnum::{num, Vector2D},
     InternalAllocator,
 };
@@ -45,9 +45,12 @@ impl<'a> Enemy<'a> for Bat<'a> {
 
         match &mut self.state {
             BatState::Idle => {
-                let offset = (timer / 16) as usize;
+                self.enemy_info.affected_by_gravity = false;
+                let offset = (timer / 8) as usize;
                 let frame = BAT_FLY.animation_sprite(offset);
                 let sprite = controller.sprite(frame);
+
+                self.enemy_info.entity.velocity = (0, 0).into();
 
                 self.enemy_info.entity.sprite.set_sprite(sprite);
 
@@ -70,15 +73,14 @@ impl<'a> Enemy<'a> for Bat<'a> {
             }
             BatState::Chasing(remaining_frames) => {
                 *remaining_frames -= 1;
-                let offset = (timer / 4) as usize;
+                let offset = timer as usize;
 
                 let frame = BAT_FLY.animation_sprite(offset);
                 let sprite = controller.sprite(frame);
 
                 self.enemy_info.entity.sprite.set_sprite(sprite);
 
-                let direction =
-                    (player_pos - self.enemy_info.entity.position).fast_normalise() / 16;
+                let direction = (player_pos - self.enemy_info.entity.position).fast_normalise() / 2;
 
                 self.enemy_info.entity.velocity = direction;
 
@@ -91,6 +93,7 @@ impl<'a> Enemy<'a> for Bat<'a> {
                 }
             }
             BatState::Falling(falling_start_frame) => {
+                self.enemy_info.affected_by_gravity = true;
                 if timer == *falling_start_frame + 1 {
                     let frame = BAT_DEAD.animation_sprite(0);
                     let sprite = controller.sprite(frame);
@@ -99,7 +102,6 @@ impl<'a> Enemy<'a> for Bat<'a> {
                     // TODO(GK): play sound
                 }
 
-                self.enemy_info.entity.velocity += (num!(0.), num!(0.1)).into();
                 if self.enemy_info.entity.is_on_ground(level) {
                     self.enemy_info.entity.velocity = (0, 0).into();
                     self.state = BatState::Dead;

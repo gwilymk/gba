@@ -82,19 +82,23 @@ mod tiled_export {
         let height = &level.height;
         let foreground = &level.foreground;
         let background = &level.background;
-        let snails = level.snails.iter().map(wrap_tuple);
-        let slimes = level.slimes.iter().map(wrap_tuple);
+        let enemies = level
+            .enemies
+            .iter()
+            .map(|&((x, y), enemy_type)| wrap_tuple(&(wrap_tuple(&(x, y)), enemy_type)));
         let stops = level.stops.iter().map(wrap_tuple);
         let start = wrap_tuple(&level.start);
 
         let encoded = quote::quote!(
+            #[allow(unused_imports)]
+            use crate::enemies::EnemyType::{self, *};
+
             const WIDTH: u32 = #width;
             const HEIGHT: u32 = #height;
             const TILEMAP: &[u16] = &[#(#foreground),*];
             const BACKGROUND: &[u16] = &[#(#background),*];
 
-            const SNAILS: &[(i32, i32)] = &[#(#snails),*];
-            const SLIMES: &[(i32, i32)] = &[#(#slimes),*];
+            const ENEMIES: &[((i32, i32), EnemyType)] = &[#(#enemies),*];
             const ENEMY_STOPS: &[(i32, i32)] = &[#(#stops),*];
             const START_POS: (i32, i32) = #start;
 
@@ -109,8 +113,7 @@ mod tiled_export {
                     collision: crate::map_tiles::tilemap::TILE_DATA,
 
                     enemy_stops: ENEMY_STOPS,
-                    slimes: SLIMES,
-                    snails: SNAILS,
+                    enemies: ENEMIES,
                     start_pos: START_POS,
                 }
             }
@@ -128,11 +131,13 @@ mod tiled_export {
         }
     }
 
-    struct WrappedTuple<T>(T, T);
+    #[derive(Clone, Copy)]
+    struct WrappedTuple<T, V>(T, V);
 
-    impl<T> ToTokens for WrappedTuple<T>
+    impl<T, V> ToTokens for WrappedTuple<T, V>
     where
         T: ToTokens,
+        V: ToTokens,
     {
         fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
             let t1 = &self.0;
@@ -141,7 +146,7 @@ mod tiled_export {
         }
     }
 
-    fn wrap_tuple<T: Copy>(a: &(T, T)) -> WrappedTuple<T> {
+    fn wrap_tuple<T: Copy, V: Copy>(a: &(T, V)) -> WrappedTuple<T, V> {
         WrappedTuple(a.0, a.1)
     }
 
@@ -165,8 +170,7 @@ mod tiled_export {
 
         let points = extract_points(points);
 
-        let mut snails = Vec::new();
-        let mut slimes = Vec::new();
+        let mut enemies = vec![];
         let mut enemy_stops = Vec::new();
 
         let mut start_pos = (0, 0);
@@ -174,8 +178,9 @@ mod tiled_export {
         for point in points {
             match point.0.as_str() {
                 "Player Start" => start_pos = point.1,
-                "Slime Spawn" => slimes.push(point.1),
-                "Snail Spawn" => snails.push(point.1),
+                "Slime Spawn" => enemies.push((point.1, EnemyType::Slime)),
+                "Snail Spawn" => enemies.push((point.1, EnemyType::Snail)),
+                "Bat Spawn" => enemies.push((point.1, EnemyType::Bat)),
                 "Enemy Stop" => enemy_stops.push(point.1),
                 _ => panic!("unknown object {}", point.0),
             }
@@ -184,10 +189,9 @@ mod tiled_export {
         Level {
             width,
             height,
+            enemies,
             background,
             foreground,
-            slimes,
-            snails,
             stops: enemy_stops,
             start: start_pos,
         }
@@ -226,13 +230,25 @@ mod tiled_export {
         tiles
     }
 
+    #[derive(Debug, Clone, Copy)]
+    enum EnemyType {
+        Bat,
+        Snail,
+        Slime,
+    }
+
+    impl ToTokens for EnemyType {
+        fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+            quote::format_ident!("{self:?}").to_tokens(tokens);
+        }
+    }
+
     struct Level {
         width: u32,
         height: u32,
         background: Vec<u16>,
         foreground: Vec<u16>,
-        slimes: Vec<(i32, i32)>,
-        snails: Vec<(i32, i32)>,
+        enemies: Vec<((i32, i32), EnemyType)>,
         stops: Vec<(i32, i32)>,
         start: (i32, i32),
     }

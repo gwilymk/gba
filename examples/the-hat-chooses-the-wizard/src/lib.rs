@@ -43,8 +43,7 @@ pub struct Level {
     dimensions: Vector2D<u32>,
     collision: &'static [u32],
 
-    slimes: &'static [(i32, i32)],
-    snails: &'static [(i32, i32)],
+    enemies: &'static [((i32, i32), enemies::EnemyType)],
     enemy_stops: &'static [(i32, i32)],
     start_pos: (i32, i32),
 }
@@ -464,18 +463,12 @@ impl<'a, 'b> PlayingLevel<'a, 'b> {
         foreground: &'a mut InfiniteScrolledMap<'b>,
         input: ButtonController,
     ) -> Self {
-        let mut e = Vec::with_capacity(level.slimes.len() + level.snails.len());
-        for &slime in level.slimes {
-            e.push(enemies::slime::Slime::new_boxed(
+        let mut e = Vec::with_capacity(level.enemies.len());
+        for (enemy_start, enemy_type) in level.enemies {
+            e.push(enemies::new_enemy(
+                *enemy_type,
                 object_control,
-                slime.into(),
-            ));
-        }
-
-        for &snail in level.snails {
-            e.push(enemies::snail::Snail::new_boxed(
-                object_control,
-                snail.into(),
+                (*enemy_start).into(),
             ));
         }
 
