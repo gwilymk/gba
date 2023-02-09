@@ -2,6 +2,7 @@ use super::{sfx::SfxPlayer, Entity, FixedNumberType, HatState, Level};
 use agb::{display::object::ObjectController, fixnum::Vector2D, InternalAllocator};
 use alloc::boxed::Box;
 
+pub mod bat;
 pub mod slime;
 pub mod snail;
 
