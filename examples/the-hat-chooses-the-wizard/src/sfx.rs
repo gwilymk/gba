@@ -46,6 +46,9 @@ mod effects {
     pub const SNAIL_RETREAT: &[u8] = agb::include_wav!("sfx/snail-retreat.wav");
     pub const SNAIL_HAT_BOUNCE: &[u8] = agb::include_wav!("sfx/snail-hat-bounce.wav");
     pub const SNAIL_DEATH: &[u8] = agb::include_wav!("sfx/snail-death.wav");
+
+    pub const BAT_FLAP: &[u8] = agb::include_wav!("sfx/bat-flap.wav");
+    pub const BAT_DEAD: &[u8] = agb::include_wav!("sfx/bat-dead.wav");
 }
 
 pub struct MusicBox {
@@ -123,6 +126,14 @@ impl<'a> SfxPlayer<'a> {
     pub fn snail_death(&mut self) {
         self.mixer
             .play_sound(SoundChannel::new(effects::SNAIL_DEATH));
+    }
+
+    pub fn bat_flap(&mut self) {
+        self.mixer.play_sound(SoundChannel::new(effects::BAT_FLAP));
+    }
+
+    pub fn bat_dead(&mut self) {
+        self.mixer.play_sound(SoundChannel::new(effects::BAT_DEAD));
     }
 
     pub fn land(&mut self) {

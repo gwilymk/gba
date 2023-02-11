@@ -38,21 +38,30 @@ impl<'a> Enemy<'a> for Bat<'a> {
         player_pos: Vector2D<FixedNumberType>,
         hat_state: HatState,
         timer: i32,
-        _sfx_player: &mut SfxPlayer,
+        sfx_player: &mut SfxPlayer,
     ) -> EnemyUpdateState {
         let player_has_collided =
             (self.enemy_info.entity.position - player_pos).magnitude_squared() < (10 * 10).into();
 
+        const SLOW_FLAP_REDUCTION: i32 = 8;
+        const FAST_FLAP_REDUCTION: i32 = 1;
+        const FLAP_FRAMES: i32 = 9;
+        const SFX_FRAME: i32 = 6;
+
         match &mut self.state {
             BatState::Idle => {
                 self.enemy_info.affected_by_gravity = false;
-                let offset = (timer / 8) as usize;
+                let offset = (timer / SLOW_FLAP_REDUCTION) as usize;
                 let frame = BAT_FLY.animation_sprite(offset);
                 let sprite = controller.sprite(frame);
 
                 self.enemy_info.entity.velocity = (0, 0).into();
 
                 self.enemy_info.entity.sprite.set_sprite(sprite);
+
+                if timer % (FLAP_FRAMES * SLOW_FLAP_REDUCTION) == SFX_FRAME * SLOW_FLAP_REDUCTION {
+                    sfx_player.bat_flap();
+                }
 
                 if (self.enemy_info.entity.position - player_pos).magnitude_squared()
                     < (64 * 64).into()
@@ -91,6 +100,10 @@ impl<'a> Enemy<'a> for Bat<'a> {
                         return EnemyUpdateState::KillPlayer;
                     }
                 }
+
+                if timer % (FLAP_FRAMES * FAST_FLAP_REDUCTION) == SFX_FRAME * FAST_FLAP_REDUCTION {
+                    sfx_player.bat_flap();
+                }
             }
             BatState::Falling(falling_start_frame) => {
                 self.enemy_info.affected_by_gravity = true;
@@ -99,7 +112,7 @@ impl<'a> Enemy<'a> for Bat<'a> {
                     let sprite = controller.sprite(frame);
                     self.enemy_info.entity.sprite.set_sprite(sprite);
 
-                    // TODO(GK): play sound
+                    sfx_player.bat_dead();
                 }
 
                 if self.enemy_info.entity.is_on_ground(level) {
