@@ -17,13 +17,24 @@ mod music_data {
 }
 
 mod effects {
-    const WOOSH1: &[u8] = agb::include_wav!("sfx/woosh1.wav");
-    const WOOSH2: &[u8] = agb::include_wav!("sfx/woosh2.wav");
-    const WOOSH3: &[u8] = agb::include_wav!("sfx/woosh3.wav");
+    const WOOSH1: &[u8] = agb::include_wav!("sfx/swishes/swish-1.wav");
+    const WOOSH2: &[u8] = agb::include_wav!("sfx/swishes/swish-2.wav");
+    const WOOSH3: &[u8] = agb::include_wav!("sfx/swishes/swish-3.wav");
+    const WOOSH4: &[u8] = agb::include_wav!("sfx/swishes/swish-4.wav");
+    const WOOSH5: &[u8] = agb::include_wav!("sfx/swishes/swish-5.wav");
+    const WOOSH6: &[u8] = agb::include_wav!("sfx/swishes/swish-6.wav");
+    const WOOSH7: &[u8] = agb::include_wav!("sfx/swishes/swish-7.wav");
+    const WOOSH8: &[u8] = agb::include_wav!("sfx/swishes/swish-8.wav");
+    const WOOSH9: &[u8] = agb::include_wav!("sfx/swishes/swish-9.wav");
+    const WOOSH10: &[u8] = agb::include_wav!("sfx/swishes/swish-10.wav");
+    const WOOSH11: &[u8] = agb::include_wav!("sfx/swishes/swish-11.wav");
+    const WOOSH12: &[u8] = agb::include_wav!("sfx/swishes/swish-12.wav");
+    const WOOSH13: &[u8] = agb::include_wav!("sfx/swishes/swish-13.wav");
 
-    pub const WHOOSHES: &[&[u8]] = &[WOOSH1, WOOSH2, WOOSH3];
-
-    pub const CATCH: &[u8] = agb::include_wav!("sfx/catch.wav");
+    pub const WHOOSHES: &[&[u8]] = &[
+        WOOSH1, WOOSH2, WOOSH3, WOOSH4, WOOSH5, WOOSH6, WOOSH7, WOOSH8, WOOSH9, WOOSH10, WOOSH11,
+        WOOSH12, WOOSH13,
+    ];
 
     pub const JUMP: &[u8] = agb::include_wav!("sfx/jump.wav");
     pub const LAND: &[u8] = agb::include_wav!("sfx/land.wav");
@@ -74,7 +85,7 @@ impl<'a> SfxPlayer<'a> {
     }
 
     pub fn catch(&mut self) {
-        self.mixer.play_sound(SoundChannel::new(effects::CATCH));
+        self.throw();
     }
 
     pub fn throw(&mut self) {

@@ -664,7 +664,7 @@ pub fn main(mut agb: agb::Gba) -> ! {
         vram.set_background_palettes(tile_sheet::PALETTES);
 
         let object = agb.display.object.get();
-        let mut mixer = agb.mixer.mixer(Frequency::Hz32768);
+        let mut mixer = agb.mixer.mixer(Frequency::Hz18157);
 
         mixer.enable();
         let mut music_box = sfx::MusicBox::new();
