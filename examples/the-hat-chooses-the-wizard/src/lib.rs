@@ -170,10 +170,16 @@ pub enum HatState {
     WizardTowards,
 }
 
+struct PlayerConfig {
+    hat_control: FixedNumberType,
+}
+
 struct Player<'a> {
     wizard: Entity<'a>,
+    config: PlayerConfig,
     hat: Entity<'a>,
     hat_state: HatState,
+    control_hat_rather_than_wizard: bool,
     hat_left_range: bool,
     hat_slow_counter: i32,
     wizard_frame: u8,
@@ -213,6 +219,10 @@ impl<'a> Player<'a> {
 
         Player {
             wizard,
+            config: PlayerConfig {
+                hat_control: FixedNumberType::new(2) / 16,
+            },
+            control_hat_rather_than_wizard: false,
             hat,
             hat_slow_counter: 0,
             hat_state: HatState::OnHead,
@@ -253,6 +263,7 @@ impl<'a> Player<'a> {
                     }
                     self.hat.velocity = velocity;
                     self.hat_state = HatState::Thrown;
+                    self.control_hat_rather_than_wizard = true;
 
                     sfx_player.throw();
                 }
@@ -269,6 +280,10 @@ impl<'a> Player<'a> {
             }
         }
 
+        if !input.is_pressed(Button::A) || self.hat_slow_counter != 0 {
+            self.control_hat_rather_than_wizard = false;
+        }
+
         let was_on_ground = self.is_on_ground;
         let is_on_ground = self.wizard.is_on_ground(level);
 
@@ -282,15 +297,27 @@ impl<'a> Player<'a> {
                 self.num_recalls = 0;
             }
 
+            let x_direction = if self.control_hat_rather_than_wizard {
+                0
+            } else {
+                input.x_tri() as i32
+            };
+
+            let pressed_jump = if self.control_hat_rather_than_wizard {
+                false
+            } else {
+                input.is_just_pressed(Button::B)
+            };
+
             if is_on_ground {
-                self.wizard.velocity.x += FixedNumberType::new(input.x_tri() as i32) / 16;
+                self.wizard.velocity.x += FixedNumberType::new(x_direction) / 12;
                 self.wizard.velocity = self.wizard.velocity * 54 / 64;
-                if input.is_just_pressed(Button::B) {
+                if pressed_jump {
                     self.wizard.velocity.y = -FixedNumberType::new(3) / 2;
                     sfx_player.jump();
                 }
             } else {
-                self.wizard.velocity.x += FixedNumberType::new(input.x_tri() as i32) / 64;
+                self.wizard.velocity.x += FixedNumberType::new(x_direction) / 64;
                 self.wizard.velocity = self.wizard.velocity * 63 / 64;
 
                 self.wizard.velocity += GRAVITY;
@@ -383,6 +410,14 @@ impl<'a> Player<'a> {
                     1 => 2,
                     _ => 4,
                 };
+
+                if self.control_hat_rather_than_wizard {
+                    let control_vector = input.vector::<i32>().change_base::<FixedNumberType>();
+                    if control_vector.manhattan_distance().to_raw() != 0 {
+                        self.hat.velocity += input.vector::<i32>().change_base().fast_normalise()
+                            * self.config.hat_control;
+                    }
+                }
 
                 let hat_sprite_offset = (timer / hat_sprite_divider) as usize;
 
