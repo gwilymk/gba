@@ -139,7 +139,7 @@ impl<'a> Slime<'a> {
     pub fn new_boxed(
         object: &'a ObjectController,
         start_pos: Vector2D<FixedNumberType>,
-    ) -> BoxedEnemy {
+    ) -> BoxedEnemy<'a> {
         Box::new_in(Self::new(object, start_pos), InternalAllocator)
     }
 }

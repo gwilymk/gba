@@ -15,11 +15,11 @@ pub enum EnemyType {
     Snail,
 }
 
-pub fn new_enemy(
+pub fn new_enemy<'a>(
     enemy_type: EnemyType,
-    object: &'_ ObjectController,
+    object: &'a ObjectController<'a>,
     start_pos: Vector2D<FixedNumberType>,
-) -> BoxedEnemy {
+) -> BoxedEnemy<'a> {
     match enemy_type {
         EnemyType::Bat => bat::Bat::new_boxed(object, start_pos),
         EnemyType::Slime => slime::Slime::new_boxed(object, start_pos),

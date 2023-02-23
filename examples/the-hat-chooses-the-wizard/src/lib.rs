@@ -22,6 +22,7 @@ use agb::{
 };
 use alloc::{boxed::Box, vec::Vec};
 use enemies::BoxedEnemy;
+use sfx::SfxPlayer;
 
 mod enemies;
 mod level_display;
@@ -568,7 +569,7 @@ impl<'a, 'b> PlayingLevel<'a, 'b> {
 
     fn update_frame(
         &mut self,
-        sfx_player: &mut sfx::SfxPlayer,
+        sfx_player: &mut SfxPlayer,
         vram: &mut VRamManager,
         controller: &'a ObjectController,
     ) -> UpdateState {
@@ -681,13 +682,17 @@ pub fn main(mut agb: agb::Gba) -> ! {
         }
     }
 
+    let mut mixer = agb.mixer.mixer(Frequency::Hz18157);
+
+    mixer.enable();
+    let mut sfx = sfx::SfxPlayer::new(&mut mixer);
+
     world_display.commit(&mut vram);
     world_display.show();
 
     splash_screen::show_splash_screen(
         splash_screen::SplashScreen::Start,
-        None,
-        None,
+        &mut sfx,
         &mut splash_screen,
         &mut vram,
     );
@@ -699,10 +704,6 @@ pub fn main(mut agb: agb::Gba) -> ! {
         vram.set_background_palettes(tile_sheet::PALETTES);
 
         let object = agb.display.object.get();
-        let mut mixer = agb.mixer.mixer(Frequency::Hz18157);
-
-        mixer.enable();
-        let mut music_box = sfx::MusicBox::new();
 
         let vblank = agb::interrupt::VBlank::get();
         let mut current_level = 0;
@@ -712,8 +713,7 @@ pub fn main(mut agb: agb::Gba) -> ! {
                 break;
             }
 
-            music_box.before_frame(&mut mixer);
-            mixer.frame();
+            sfx.frame();
             vblank.wait_for_vblank();
 
             level_display::write_level(
@@ -727,8 +727,7 @@ pub fn main(mut agb: agb::Gba) -> ! {
             world_display.commit(&mut vram);
             world_display.show();
 
-            music_box.before_frame(&mut mixer);
-            mixer.frame();
+            sfx.frame();
             vblank.wait_for_vblank();
 
             let map_current_level = current_level;
@@ -772,20 +771,17 @@ pub fn main(mut agb: agb::Gba) -> ! {
             );
 
             while level.background.init_background(&mut vram) != PartialUpdateStatus::Done {
-                music_box.before_frame(&mut mixer);
-                mixer.frame();
+                sfx.frame();
                 vblank.wait_for_vblank();
             }
 
             while level.background.init_foreground(&mut vram) != PartialUpdateStatus::Done {
-                music_box.before_frame(&mut mixer);
-                mixer.frame();
+                sfx.frame();
                 vblank.wait_for_vblank();
             }
 
             for _ in 0..20 {
-                music_box.before_frame(&mut mixer);
-                mixer.frame();
+                sfx.frame();
                 vblank.wait_for_vblank();
             }
 
@@ -796,17 +792,12 @@ pub fn main(mut agb: agb::Gba) -> ! {
             world_display.hide();
 
             loop {
-                match level.update_frame(
-                    &mut sfx::SfxPlayer::new(&mut mixer, &music_box),
-                    &mut vram,
-                    &object,
-                ) {
+                match level.update_frame(&mut sfx, &mut vram, &object) {
                     UpdateState::Normal => {}
                     UpdateState::Dead => {
                         level.dead_start();
                         while level.dead_update(&object) {
-                            music_box.before_frame(&mut mixer);
-                            mixer.frame();
+                            sfx.frame();
                             vblank.wait_for_vblank();
                             object.commit();
                         }
@@ -818,8 +809,7 @@ pub fn main(mut agb: agb::Gba) -> ! {
                     }
                 }
 
-                music_box.before_frame(&mut mixer);
-                mixer.frame();
+                sfx.frame();
                 vblank.wait_for_vblank();
                 object.commit();
             }
@@ -832,8 +822,7 @@ pub fn main(mut agb: agb::Gba) -> ! {
 
         splash_screen::show_splash_screen(
             splash_screen::SplashScreen::End,
-            Some(&mut mixer),
-            Some(&mut music_box),
+            &mut sfx,
             &mut splash_screen,
             &mut vram,
         );
