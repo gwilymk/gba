@@ -4,6 +4,7 @@ use alloc::boxed::Box;
 
 pub mod bat;
 pub mod slime;
+pub mod slime_boss;
 pub mod snail;
 
 pub type BoxedEnemy<'a> = Box<dyn Enemy<'a> + 'a, InternalAllocator>;
@@ -13,6 +14,7 @@ pub enum EnemyType {
     Bat,
     Slime,
     Snail,
+    SlimeBoss,
 }
 
 pub fn new_enemy<'a>(
@@ -24,6 +26,7 @@ pub fn new_enemy<'a>(
         EnemyType::Bat => bat::Bat::new_boxed(object, start_pos),
         EnemyType::Slime => slime::Slime::new_boxed(object, start_pos),
         EnemyType::Snail => snail::Snail::new_boxed(object, start_pos),
+        EnemyType::SlimeBoss => slime_boss::SlimeBoss::new_boxed(object, start_pos),
     }
 }
 

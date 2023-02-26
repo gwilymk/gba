@@ -1,6 +1,17 @@
 const LEVELS: &[&str] = &[
-    "1-1.tmx", "1-2.tmx", "1-3.tmx", "1-4.tmx", "1-5.tmx", "1-6.tmx", "1-7.tmx", "1-8.tmx",
-    "2-4.tmx", "2-2.tmx", "2-1.tmx", "2-3.tmx",
+    "1-1.tmx",
+    "1-2.tmx",
+    "1-3.tmx",
+    "1-4.tmx",
+    "1-5.tmx",
+    "1-6.tmx",
+    "1-7.tmx",
+    "1-8.tmx",
+    "2-4.tmx",
+    "2-2.tmx",
+    "2-1.tmx",
+    "2-3.tmx",
+    "slime-boss.tmx",
 ];
 
 fn main() {
@@ -182,7 +193,8 @@ mod tiled_export {
                 "Snail Spawn" => enemies.push((point.1, EnemyType::Snail)),
                 "Bat Spawn" => enemies.push((point.1, EnemyType::Bat)),
                 "Enemy Stop" => enemy_stops.push(point.1),
-                _ => panic!("unknown object {}", point.0),
+                "Slime Boss Spawn" => enemies.push((point.1, EnemyType::SlimeBoss)),
+                _ => panic!("unknown object {}", point.0.as_str()),
             }
         }
 
@@ -203,9 +215,15 @@ mod tiled_export {
             _ => panic!("expected a tile layer but got something other than a tile layer"),
         };
 
-        layer
-            .objects()
-            .map(|o| (o.obj_type.clone(), (o.x as i32, o.y as i32)))
+        layer.objects().map(|o| {
+            let obj_type = if o.obj_type.is_empty() {
+                &o.name
+            } else {
+                &o.obj_type
+            };
+
+            (obj_type.clone(), (o.x as i32, o.y as i32))
+        })
     }
 
     fn extract_tiles(layer: tiled::Layer) -> Vec<u16> {
@@ -235,6 +253,7 @@ mod tiled_export {
         Bat,
         Snail,
         Slime,
+        SlimeBoss,
     }
 
     impl ToTokens for EnemyType {

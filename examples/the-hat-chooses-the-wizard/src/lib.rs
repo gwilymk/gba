@@ -52,6 +52,7 @@ pub struct Level {
 mod map_tiles {
     use super::Level;
     pub const LEVELS: &[Level] = &[
+        lslime_boss::get_level(),
         l1_1::get_level(),
         l1_2::get_level(),
         l1_3::get_level(),
@@ -92,6 +93,7 @@ mod map_tiles {
     include_level!(l2_2, "2-2");
     include_level!(l2_3, "2-3");
     include_level!(l2_4, "2-4");
+    include_level!(lslime_boss, "slime-boss");
 
     pub mod tilemap {
         include_out_dir!("tilemap.rs");
@@ -102,6 +104,9 @@ agb::include_gfx!("gfx/tile_sheet.toml");
 
 const GRAPHICS: &Graphics = agb::include_aseprite!("gfx/sprites.aseprite");
 const TAG_MAP: &TagMap = GRAPHICS.tags();
+
+const BOSS_GRAPHICS: &Graphics = agb::include_aseprite!("gfx/boss.aseprite");
+const BOSS_TAG_MAP: &TagMap = BOSS_GRAPHICS.tags();
 
 const WALKING: &Tag = TAG_MAP.get("Walking");
 const JUMPING: &Tag = TAG_MAP.get("Jumping");
