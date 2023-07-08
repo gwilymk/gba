@@ -37,8 +37,6 @@ export enum GbaKey {
 const BindingsOrder = [
   GbaKey.A,
   GbaKey.B,
-  GbaKey.L,
-  GbaKey.R,
   GbaKey.Up,
   GbaKey.Down,
   GbaKey.Left,
