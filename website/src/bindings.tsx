@@ -8,7 +8,7 @@ const DefaultBindings = (): KeyBindings => {
     L: "A",
     R: "S",
     Start: "ENTER",
-    Select: "SHIFT",
+    Select: "Backspace",
     Up: "UP",
     Down: "DOWN",
     Left: "LEFT",

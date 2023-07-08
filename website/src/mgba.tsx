@@ -102,7 +102,7 @@ export const Mgba = forwardRef<MgbaHandle, MgbaProps>(
 
       for (const [key, value] of controlEntries) {
         const binding =
-          value === "Enter"
+          value.toLowerCase() === "enter"
             ? "Return"
             : value.toLowerCase().replace("arrow", "").replace("key", "");
 
