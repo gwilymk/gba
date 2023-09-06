@@ -125,10 +125,8 @@ pub fn write_gba_file<W: Write>(
 
     if !bytes_written.is_power_of_two() && padding_behaviour == PaddingBehaviour::Pad {
         let required_padding = bytes_written.next_power_of_two() - bytes_written;
-
-        for _ in 0..required_padding {
-            output.write_all(&[0])?;
-        }
+        let zero_vec = vec![0; required_padding as usize];
+        output.write_all(&zero_vec)?;
     }
 
     Ok(())
