@@ -79,7 +79,7 @@ pub fn write_gba_file<W: Write>(
         .section_headers()
         .ok_or_else(|| anyhow!("Failed to parse as elf file"))?;
 
-    let mut bytes_written = 0;
+    let mut bytes_written = 0usize;
     for section_header in section_headers.iter() {
         const SHT_NOBITS: u32 = 8;
         const SHT_NULL: u32 = 0;
@@ -91,12 +91,11 @@ pub fn write_gba_file<W: Write>(
             continue;
         }
 
-        let align = bytes_written % section_header.sh_addralign;
+        let align = bytes_written as u64 % section_header.sh_addralign;
         if align != 0 {
-            for _ in 0..(section_header.sh_addralign - align) {
-                output.write_all(&[0])?;
-                bytes_written += 1;
-            }
+            let zero_vec = vec![0; (section_header.sh_addralign - align) as usize];
+            bytes_written += zero_vec.len();
+            output.write_all(&zero_vec)?;
         }
 
         let (mut data, compression) = elf_file.section_data(&section_header)?;
@@ -116,16 +115,16 @@ pub fn write_gba_file<W: Write>(
             output.write_all(&header_bytes)?;
 
             data = &data[GBA_HEADER_SIZE..];
-            bytes_written += GBA_HEADER_SIZE as u64;
+            bytes_written += GBA_HEADER_SIZE;
         }
 
         output.write_all(data)?;
-        bytes_written += data.len() as u64;
+        bytes_written += data.len();
     }
 
     if !bytes_written.is_power_of_two() && padding_behaviour == PaddingBehaviour::Pad {
         let required_padding = bytes_written.next_power_of_two() - bytes_written;
-        let zero_vec = vec![0; required_padding as usize];
+        let zero_vec = vec![0; required_padding];
         output.write_all(&zero_vec)?;
     }
 
