@@ -1,6 +1,2 @@
 [workspace]
-members = [
-    "mgba",
-    "mgba-sys",
-    "test-runner"
-]
+members = ["mgba", "mgba-sys", "test-runner", "tapir-emulator"]

@@ -169,6 +169,19 @@ impl MCore {
     }
 }
 
+pub enum KeyMap {
+    A,
+    B,
+    Select,
+    Start,
+    Right,
+    Left,
+    Up,
+    Down,
+    R,
+    L,
+}
+
 #[cfg(test)]
 mod tests {
 
