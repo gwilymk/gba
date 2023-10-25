@@ -137,6 +137,19 @@ impl MCore {
         unsafe { mgba_sys::mTimingGlobalTime(self.core.as_ref().timing) }
     }
 
+    pub fn set_audio_frequency(&mut self, target_frequency: f64) {
+        let audio_channel_left = unsafe { call_on_core!(self.core=>getAudioChannel(0)) };
+        let audio_channel_right = unsafe { call_on_core!(self.core=>getAudioChannel(1)) };
+
+        let clock_rate = unsafe { call_on_core!(self.core=>frequency()) };
+        unsafe {
+            mgba_sys::blip_set_rates(audio_channel_left, clock_rate as f64, target_frequency)
+        };
+        unsafe {
+            mgba_sys::blip_set_rates(audio_channel_right, clock_rate as f64, target_frequency)
+        };
+    }
+
     pub fn read_audio(&mut self, target: &mut [i16]) -> usize {
         let audio_channel_left = unsafe { call_on_core!(self.core=>getAudioChannel(0)) };
         let audio_channel_right = unsafe { call_on_core!(self.core=>getAudioChannel(1)) };

@@ -1,7 +1,4 @@
-use std::{
-    env, fs, thread,
-    time::{Duration, Instant},
-};
+use std::{env, fs};
 
 use anyhow::Context;
 use sdl2::{
@@ -10,6 +7,10 @@ use sdl2::{
     keyboard::{Keycode, Scancode},
     pixels::PixelFormatEnum,
 };
+
+use gba_audio::DynamicSampleRate;
+
+mod gba_audio;
 
 fn main() -> anyhow::Result<()> {
     let sdl_context = sdl2::init().unwrap();
@@ -34,7 +35,7 @@ fn main() -> anyhow::Result<()> {
         .build()
         .unwrap();
 
-    let mut canvas = window.into_canvas().accelerated().build()?;
+    let mut canvas = window.into_canvas().accelerated().present_vsync().build()?;
 
     let texture_creator = canvas.texture_creator();
     let mut texture =
@@ -48,19 +49,19 @@ fn main() -> anyhow::Result<()> {
         .open_queue(
             None,
             &AudioSpecDesired {
-                freq: Some(44100),
+                freq: None,
                 channels: Some(2),
                 samples: None,
             },
         )
         .map_err(|e| anyhow::anyhow!("Failed to open audio queue {e}"))?;
+
+    let mut dynamic_sample_rate = DynamicSampleRate::new(audio_queue.spec().freq as f64);
+    let mut audio_buffer = vec![0; dynamic_sample_rate.samples_per_frame_estimate()];
+
     audio_queue.resume();
 
     let mut keys = 0;
-
-    let mut audio_buffer = vec![0; 800 * 2];
-
-    let mut sleep_until = None;
 
     'running: loop {
         for event in event_pump.poll_iter() {
@@ -93,20 +94,15 @@ fn main() -> anyhow::Result<()> {
         mgba_core.set_keys(keys);
         mgba_core.frame();
 
-        if let Some(sleep_until) = sleep_until {
-            let sleep_duration = sleep_until - Instant::now();
-            thread::sleep(sleep_duration);
-        }
+        mgba_core.set_audio_frequency(dynamic_sample_rate.frequency_estimate());
+        audio_buffer.resize(dynamic_sample_rate.samples_per_frame_estimate(), 0);
+        let audio_amount = mgba_core.read_audio(&mut audio_buffer);
 
-        let audio_amount: usize = mgba_core.read_audio(&mut audio_buffer);
         audio_queue
-            .queue_audio(&audio_buffer[..audio_amount * 2])
+            .queue_audio(&audio_buffer)
             .map_err(|e| anyhow::anyhow!("Failed to enqueue audio {e}"))?;
 
-        // audio queue size is in bytes. 4 bytes per sample (because scaling) per channel hence divide by 8
-        let audio_queue_size = ((audio_queue.size() / 8) as usize).saturating_sub(audio_amount);
-        sleep_until =
-            Some(Instant::now() + Duration::from_secs_f64(audio_queue_size as f64 / 44100.0));
+        dynamic_sample_rate.update_audio_samples_per_frame(audio_amount);
 
         texture
             .with_lock(None, |buffer, _pitch| {
@@ -145,7 +141,7 @@ fn to_gba_keycode(keycode: Scancode) -> Option<mgba::KeyMap> {
 fn load_rom() -> anyhow::Result<Vec<u8>> {
     let args: Vec<String> = env::args().collect();
 
-    let default = "../agb/target/hyperspace-roll.gba".to_owned();
+    let default = "../../target/hyperspace-roll.gba".to_owned();
     let filename = args.get(1).unwrap_or(&default); //.ok_or("Expected 1 argument".to_owned())?;
     let content =
         fs::read(filename).with_context(|| format!("Failed to open ROM file {filename}"))?;
