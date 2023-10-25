@@ -7,5 +7,8 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1"
-sdl2 = { version = "0.35", features = ["mixer"] }
 mgba = { path = "../mgba" }
+
+[dependencies.sdl2]
+
+version = "0.35"
