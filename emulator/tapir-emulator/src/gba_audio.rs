@@ -1,25 +1,21 @@
 pub struct DynamicSampleRate {
-    audio_samples_per_frame_avg: f64,
+    sample_rate: f64,
 }
 
 impl DynamicSampleRate {
     pub fn new(starting_sample_rate: f64) -> Self {
         Self {
-            audio_samples_per_frame_avg: starting_sample_rate / 60.0,
+            sample_rate: starting_sample_rate,
         }
     }
 
-    pub fn samples_per_frame_estimate(&self) -> usize {
-        self.audio_samples_per_frame_avg as usize * 2
+    pub fn sample_rate(&self) -> f64 {
+        self.sample_rate
     }
 
-    pub fn frequency_estimate(&self) -> f64 {
-        self.audio_samples_per_frame_avg * 60.0
-    }
-
-    pub fn update_audio_samples_per_frame(&mut self, samples: usize) {
+    pub fn update_sample_rate(&mut self, guess: f64) {
         const MOVING_AVG_ALPHA: f64 = 1.0 / 180.0;
-        self.audio_samples_per_frame_avg = (MOVING_AVG_ALPHA * samples as f64)
-            + (1.0 - MOVING_AVG_ALPHA) * self.audio_samples_per_frame_avg;
+        self.sample_rate =
+            (MOVING_AVG_ALPHA * guess as f64) + (1.0 - MOVING_AVG_ALPHA) * self.sample_rate;
     }
 }

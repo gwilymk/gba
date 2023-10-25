@@ -1,6 +1,8 @@
-use std::{env, fs};
+use std::{env, fs, time::Instant};
 
 use anyhow::Context;
+use audio_stream::SdlAudioStream;
+use gba_audio::DynamicSampleRate;
 use sdl2::{
     audio::{AudioQueue, AudioSpecDesired},
     event::Event,
@@ -8,8 +10,9 @@ use sdl2::{
     pixels::PixelFormatEnum,
 };
 
-use gba_audio::DynamicSampleRate;
+const GBA_FRAMES_PER_SECOND: f64 = 59.727500569606;
 
+mod audio_stream;
 mod gba_audio;
 
 fn main() -> anyhow::Result<()> {
@@ -56,14 +59,24 @@ fn main() -> anyhow::Result<()> {
         )
         .map_err(|e| anyhow::anyhow!("Failed to open audio queue {e}"))?;
 
-    let mut dynamic_sample_rate = DynamicSampleRate::new(audio_queue.spec().freq as f64);
-    let mut audio_buffer = vec![0; dynamic_sample_rate.samples_per_frame_estimate()];
+    let audio_sample_rate = audio_queue.spec().freq as f64;
+
+    let mut audio_buffer = vec![];
+
+    mgba_core.set_audio_frequency(audio_sample_rate);
+    let mut dynamic_sample_rate = DynamicSampleRate::new(audio_sample_rate);
 
     audio_queue.resume();
 
     let mut keys = 0;
 
+    let mut prev_frame = None;
+
     'running: loop {
+        let now = Instant::now();
+        let frame_time = prev_frame.map(|prev_frame| now - prev_frame);
+        prev_frame = Some(now);
+
         for event in event_pump.poll_iter() {
             match event {
                 Event::Quit { .. }
@@ -94,15 +107,24 @@ fn main() -> anyhow::Result<()> {
         mgba_core.set_keys(keys);
         mgba_core.frame();
 
-        mgba_core.set_audio_frequency(dynamic_sample_rate.frequency_estimate());
-        audio_buffer.resize(dynamic_sample_rate.samples_per_frame_estimate(), 0);
-        let audio_amount = mgba_core.read_audio(&mut audio_buffer);
+        mgba_core.read_audio(&mut audio_buffer);
+
+        if let Some(frame_time) = frame_time {
+            let dest_rate = frame_time.as_secs_f64() * audio_sample_rate * GBA_FRAMES_PER_SECOND;
+            dynamic_sample_rate.update_sample_rate(dest_rate);
+            let mut audio_stream = SdlAudioStream::new(
+                audio_sample_rate as i32,
+                dynamic_sample_rate.sample_rate() as i32,
+            );
+
+            audio_stream.put(&audio_buffer);
+            audio_stream.flush();
+            audio_stream.get(&mut audio_buffer).unwrap();
+        }
 
         audio_queue
             .queue_audio(&audio_buffer)
             .map_err(|e| anyhow::anyhow!("Failed to enqueue audio {e}"))?;
-
-        dynamic_sample_rate.update_audio_samples_per_frame(audio_amount);
 
         texture
             .with_lock(None, |buffer, _pitch| {

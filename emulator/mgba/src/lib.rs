@@ -150,19 +150,19 @@ impl MCore {
         };
     }
 
-    pub fn read_audio(&mut self, target: &mut [i16]) -> usize {
+    pub fn read_audio(&mut self, target: &mut Vec<i16>) {
         let audio_channel_left = unsafe { call_on_core!(self.core=>getAudioChannel(0)) };
         let audio_channel_right = unsafe { call_on_core!(self.core=>getAudioChannel(1)) };
 
         let samples_available = unsafe { mgba_sys::blip_samples_avail(audio_channel_left) };
 
         if samples_available > 0 {
-            let samples_to_read = samples_available.min(target.len() as i32 / 2);
-            let produced = unsafe {
+            target.resize(samples_available as usize * 2, 0);
+            unsafe {
                 mgba_sys::blip_read_samples(
                     audio_channel_left,
                     target.as_mut_ptr().cast(),
-                    samples_to_read,
+                    samples_available,
                     1,
                 )
             };
@@ -170,15 +170,11 @@ impl MCore {
                 mgba_sys::blip_read_samples(
                     audio_channel_right,
                     target.as_mut_ptr().add(1).cast(),
-                    samples_to_read,
+                    samples_available,
                     1,
                 )
             };
-
-            return produced.try_into().unwrap();
         }
-
-        0
     }
 }
 
