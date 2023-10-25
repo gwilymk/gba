@@ -15,7 +15,6 @@ impl DynamicSampleRate {
 
     pub fn update_sample_rate(&mut self, guess: f64) {
         const MOVING_AVG_ALPHA: f64 = 1.0 / 180.0;
-        self.sample_rate =
-            (MOVING_AVG_ALPHA * guess as f64) + (1.0 - MOVING_AVG_ALPHA) * self.sample_rate;
+        self.sample_rate = (MOVING_AVG_ALPHA * guess) + (1.0 - MOVING_AVG_ALPHA) * self.sample_rate;
     }
 }
