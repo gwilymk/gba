@@ -1,24 +1,19 @@
-use std::{env, fs, time::Instant};
+use std::{env, fs};
 
 use anyhow::Context;
-use audio_stream::SdlAudioStream;
-use gba_audio::DynamicSampleRate;
-use resampler::CubicResampler;
+use resampler::{CubicResampler, SharedAudioQueue};
 use sdl2::{
-    audio::{AudioQueue, AudioSpecDesired},
+    audio::AudioSpecDesired,
     event::Event,
     keyboard::{Keycode, Scancode},
     pixels::PixelFormatEnum,
 };
 
-use crate::resampler::Resampler;
+use crate::resampler::{calculate_dynamic_rate_ratio, Resampler};
 
 mod resampler;
 
 const GBA_FRAMES_PER_SECOND: f64 = 59.727500569606;
-
-mod audio_stream;
-mod gba_audio;
 
 fn main() -> anyhow::Result<()> {
     let sdl_context = sdl2::init().unwrap();
@@ -53,41 +48,42 @@ fn main() -> anyhow::Result<()> {
         .event_pump()
         .map_err(|e| anyhow::anyhow!("Failed to initialise event pump {e}"))?;
 
-    let audio_queue: AudioQueue<i16> = audio_subsystem
-        .open_queue(
+    let audio_queue = SharedAudioQueue::default();
+
+    let audio_system = audio_subsystem
+        .open_playback(
             None,
             &AudioSpecDesired {
                 freq: None,
                 channels: Some(2),
                 samples: None,
             },
-        )
-        .map_err(|e| anyhow::anyhow!("Failed to open audio queue {e}"))?;
+            |s| {
+                let queue = audio_queue.clone();
+                queue.set_sample_rate(s.freq as usize);
 
-    let audio_sample_rate = audio_queue.spec().freq as f64;
-    let audio_buffer_size = audio_queue.spec().samples;
+                queue
+            },
+        )
+        .expect("should be able to initialise audio");
+
+    let audio_sample_rate = audio_queue.sample_rate() as f64;
 
     let mut resamplers = [
         CubicResampler::new(audio_sample_rate, audio_sample_rate),
         CubicResampler::new(audio_sample_rate, audio_sample_rate),
     ];
 
+    audio_system.resume();
+
     let mut audio_buffer = vec![];
+    let audio_sample_rate = audio_system.spec().freq as f64;
 
     mgba_core.set_audio_frequency(audio_sample_rate);
-    let mut dynamic_sample_rate = DynamicSampleRate::new(audio_sample_rate);
-
-    audio_queue.resume();
 
     let mut keys = 0;
 
-    let mut prev_frame = None;
-
     'running: loop {
-        let now = Instant::now();
-        let frame_time = prev_frame.map(|prev_frame| now - prev_frame);
-        prev_frame = Some(now);
-
         for event in event_pump.poll_iter() {
             match event {
                 Event::Quit { .. }
@@ -120,42 +116,35 @@ fn main() -> anyhow::Result<()> {
 
         mgba_core.read_audio(&mut audio_buffer);
 
-        let max_buffer_size = audio_buffer_size as f64;
+        {
+            let queue_length = audio_queue.samples();
+            let ratio = calculate_dynamic_rate_ratio(800, queue_length, 0.005);
 
-        let measured_buffer_size = audio_queue.size() as f64 / 8.;
+            let rate = audio_sample_rate * ratio;
 
-        let ratio =
-            max_buffer_size / ((1. + 0.005) * max_buffer_size - 2. * 0.005 * measured_buffer_size);
+            dbg!(ratio);
+            dbg!(rate);
+            dbg!(queue_length);
 
-        let rate = audio_sample_rate * ratio;
+            for resampler in resamplers.iter_mut() {
+                resampler.set_input_frequency(rate);
+            }
 
-        dbg!(max_buffer_size);
-        dbg!(measured_buffer_size);
-        dbg!(ratio);
-        dbg!(rate);
+            for sample in audio_buffer.chunks_exact(2) {
+                let sample_l = sample[0];
+                let sample_r = sample[1];
+                resamplers[0].write_sample(sample_l as f64);
+                resamplers[1].write_sample(sample_r as f64);
+            }
 
-        let rate = rate.clamp(2., 100000.);
+            while let (Some(a), Some(b)) =
+                (resamplers[0].read_sample(), resamplers[1].read_sample())
+            {
+                audio_queue.push([a as i16, b as i16]);
+            }
 
-        for resampler in resamplers.iter_mut() {
-            resampler.set_input_frequency(rate);
+            audio_buffer.clear();
         }
-
-        for sample in audio_buffer.chunks_exact(2) {
-            let sample_l = sample[0];
-            let sample_r = sample[1];
-            resamplers[0].write_sample(sample_l as f64);
-            resamplers[1].write_sample(sample_r as f64);
-        }
-
-        audio_buffer.clear();
-        while resamplers[0].len() != 0 {
-            audio_buffer.push(resamplers[0].read_sample() as i16);
-            audio_buffer.push(resamplers[1].read_sample() as i16);
-        }
-
-        audio_queue
-            .queue_audio(&audio_buffer)
-            .map_err(|e| anyhow::anyhow!("Failed to enqueue audio {e}"))?;
 
         texture
             .with_lock(None, |buffer, _pitch| {
@@ -194,7 +183,7 @@ fn to_gba_keycode(keycode: Scancode) -> Option<mgba::KeyMap> {
 fn load_rom() -> anyhow::Result<Vec<u8>> {
     let args: Vec<String> = env::args().collect();
 
-    let default = concat!(env!("CARGO_TARGET_DIR"), "/hyperspace-roll.gba").to_owned();
+    let default = concat!(env!("CARGO_TARGET_DIR"), "/combo.gba").to_owned();
     let filename = args.get(1).unwrap_or(&default); //.ok_or("Expected 1 argument".to_owned())?;
     let content =
         fs::read(filename).with_context(|| format!("Failed to open ROM file {filename}"))?;

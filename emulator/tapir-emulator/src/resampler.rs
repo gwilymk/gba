@@ -1,11 +1,21 @@
-use std::collections::VecDeque;
+use std::{
+    collections::VecDeque,
+    ops::Deref,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex,
+    },
+};
+
+use crossbeam::queue::SegQueue;
+use sdl2::audio::AudioCallback;
 
 pub trait Resampler {
     fn set_input_frequency(&mut self, frequency: f64);
 
     fn len(&self) -> usize;
     fn write_sample(&mut self, sample: f64);
-    fn read_sample(&mut self) -> f64;
+    fn read_sample(&mut self) -> Option<f64>;
 }
 
 pub struct CubicResampler {
@@ -15,6 +25,68 @@ pub struct CubicResampler {
     input_frequency: f64,
     output_frequency: f64,
     frequency_ratio: f64,
+}
+
+#[derive(Default)]
+pub struct AudioQueue {
+    queue: SegQueue<i16>,
+    sample_rate: AtomicUsize,
+}
+
+#[derive(Default, Clone)]
+pub struct SharedAudioQueue(Arc<AudioQueue>);
+
+impl Deref for SharedAudioQueue {
+    type Target = AudioQueue;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl AudioQueue {
+    pub fn set_sample_rate(&self, sample_rate: usize) {
+        self.sample_rate.store(sample_rate, Ordering::SeqCst);
+    }
+
+    pub fn sample_rate(&self) -> usize {
+        self.sample_rate.load(Ordering::SeqCst)
+    }
+
+    pub fn push(&self, sample: [i16; 2]) {
+        for sample in sample {
+            self.queue.push(sample);
+        }
+    }
+
+    pub fn samples(&self) -> usize {
+        self.queue.len() / 2
+    }
+}
+
+impl AudioCallback for SharedAudioQueue {
+    type Channel = i16;
+
+    fn callback(&mut self, samples_output: &mut [Self::Channel]) {
+        for sample_output in samples_output.iter_mut() {
+            let Some(sample) = self.queue.pop() else {
+                return;
+            };
+
+            *sample_output = sample;
+        }
+    }
+}
+
+pub fn calculate_dynamic_rate_ratio(
+    maximum_buffer_size: usize,
+    current_buffer_fill: usize,
+    maximum_drift: f64,
+) -> f64 {
+    let maximum_buffer_size = maximum_buffer_size as f64;
+    let current_buffer_fill = current_buffer_fill as f64;
+
+    1. - maximum_drift + 2. * current_buffer_fill / maximum_buffer_size * maximum_drift
 }
 
 impl CubicResampler {
@@ -65,9 +137,7 @@ impl Resampler for CubicResampler {
         self.fraction -= 1.;
     }
 
-    fn read_sample(&mut self) -> f64 {
-        self.buffered_samples
-            .pop_front()
-            .expect("should have a sample to pop if that's what you requested")
+    fn read_sample(&mut self) -> Option<f64> {
+        self.buffered_samples.pop_front()
     }
 }
