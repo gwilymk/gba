@@ -38,6 +38,15 @@ pub fn set_global_default_logger(logger: &'static Logger) {
     unsafe { mgba_sys::mLogSetDefaultLogger(logger.to_mgba()) }
 }
 
+extern "C" fn my_wrapped_fn(
+    core: *mut mgba_sys::ARMCore,
+    address: u32,
+    cycle_count: *mut i32,
+) -> u32 {
+    dbg!(address);
+    unsafe { mgba_sys::GBALoad32(core, address, cycle_count) }
+}
+
 impl MCore {
     pub fn new() -> Option<Self> {
         if !GLOBAL_LOGGER_HAS_BEEN_INITIALISED.load(Ordering::SeqCst) {
@@ -50,6 +59,12 @@ impl MCore {
         unsafe { mgba_sys::mCoreInitConfig(core.as_ptr(), std::ptr::null()) };
 
         unsafe { call_on_core!(core=>init()) };
+
+        unsafe {
+            (*(*(*core.as_ptr()).board.cast::<mgba_sys::GBA>()).cpu)
+                .memory
+                .load32 = Some(my_wrapped_fn)
+        };
 
         let (mut width, mut height) = (0, 0);
 
