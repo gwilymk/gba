@@ -3,7 +3,7 @@ use std::{
     ops::Deref,
     sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc, Mutex,
+        Arc,
     },
 };
 

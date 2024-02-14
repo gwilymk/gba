@@ -1,6 +1,7 @@
 use std::{env, fs};
 
 use anyhow::Context;
+use framerate::FpsManager;
 use resampler::{CubicResampler, SharedAudioQueue};
 use sdl2::{
     audio::AudioSpecDesired,
@@ -11,6 +12,7 @@ use sdl2::{
 
 use crate::resampler::{calculate_dynamic_rate_ratio, Resampler};
 
+mod framerate;
 mod resampler;
 
 const GBA_FRAMES_PER_SECOND: f64 = 59.727500569606;
@@ -82,6 +84,8 @@ fn main() -> anyhow::Result<()> {
     mgba_core.set_audio_frequency(audio_sample_rate);
 
     let mut keys = 0;
+
+    let mut fps_manager = FpsManager::new(GBA_FRAMES_PER_SECOND);
 
     'running: loop {
         for event in event_pump.poll_iter() {
@@ -155,6 +159,7 @@ fn main() -> anyhow::Result<()> {
             .copy(&texture, None, None)
             .map_err(|e| anyhow::anyhow!("Failed to copy texture {e}"))?;
         canvas.present();
+        fps_manager.delay();
     }
 
     Ok(())
