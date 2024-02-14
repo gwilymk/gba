@@ -3,8 +3,6 @@ use std::{
     io::{Cursor, Read, Seek, Write},
 };
 
-use super::VFile;
-
 pub struct MemoryBacked {
     buffer: Cursor<Cow<'static, [u8]>>,
 }
@@ -57,5 +55,3 @@ impl Seek for MemoryBacked {
         self.buffer.seek(pos)
     }
 }
-
-impl VFile for MemoryBacked {}

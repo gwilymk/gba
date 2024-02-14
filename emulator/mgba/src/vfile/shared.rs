@@ -3,8 +3,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use super::VFile;
-
 pub struct Shared<V> {
     inner: Arc<Mutex<V>>,
 }
@@ -60,5 +58,3 @@ impl<V: Seek> Seek for Shared<V> {
         self.inner.lock().unwrap().seek(pos)
     }
 }
-
-impl<V: VFile> VFile for Shared<V> {}

@@ -122,10 +122,6 @@ fn main() -> anyhow::Result<()> {
 
             let rate = audio_sample_rate * ratio;
 
-            dbg!(ratio);
-            dbg!(rate);
-            dbg!(queue_length);
-
             for resampler in resamplers.iter_mut() {
                 resampler.set_input_frequency(rate);
             }
@@ -183,8 +179,9 @@ fn to_gba_keycode(keycode: Scancode) -> Option<mgba::KeyMap> {
 fn load_rom() -> anyhow::Result<Vec<u8>> {
     let args: Vec<String> = env::args().collect();
 
-    let default = concat!(env!("CARGO_TARGET_DIR"), "/combo.gba").to_owned();
-    let filename = args.get(1).unwrap_or(&default); //.ok_or("Expected 1 argument".to_owned())?;
+    let filename = args
+        .get(1)
+        .ok_or_else(|| anyhow::anyhow!("Must pass at least one agrument"))?;
     let content =
         fs::read(filename).with_context(|| format!("Failed to open ROM file {filename}"))?;
 

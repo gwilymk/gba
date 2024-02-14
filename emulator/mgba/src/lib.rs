@@ -8,7 +8,7 @@ use std::{
 };
 
 pub use log::{LogLevel, Logger};
-pub use vfile::{file::FileBacked, memory::MemoryBacked, shared::Shared, MapFlag, VFile};
+pub use vfile::{memory::MemoryBacked, shared::Shared, MapFlag, VFile};
 
 use vfile::VFileAlloc;
 
