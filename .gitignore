@@ -1,5 +1,4 @@
 target
 /out
-template/Cargo.lock
-agb*/Cargo.lock
+Cargo.lock
 *.tiled-session

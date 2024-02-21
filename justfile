@@ -82,8 +82,8 @@ build-roms:
 build-book:
     (cd book && mdbook build)
 
-update-lockfiles *args:
-    bash .github/scripts/update-lockfiles.sh {{args}}
+update-lockfiles:
+    find -name Cargo.lock -delete
 
 publish *args: (_run-tool "publish" args)
 
