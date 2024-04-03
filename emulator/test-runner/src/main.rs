@@ -147,11 +147,13 @@ fn load_rom<P: AsRef<Path>>(path: P) -> anyhow::Result<Vec<u8>> {
     input_file.read_to_end(&mut input_file_buffer)?;
 
     let mut elf_buffer = Vec::new();
+    let include_debug_info = false;
 
     if agb_gbafix::write_gba_file(
         &input_file_buffer,
         Default::default(),
         agb_gbafix::PaddingBehaviour::DoNotPad,
+        include_debug_info,
         &mut elf_buffer,
     )
     .is_ok()
