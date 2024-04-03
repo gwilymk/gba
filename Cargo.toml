@@ -21,6 +21,8 @@ members = [
     "tracker/agb-xm",
     "tracker/agb-xm-core",
 
+    "tools",
+
     "emulator/mgba",
     "emulator/mgba-sys",
     "emulator/test-runner",
