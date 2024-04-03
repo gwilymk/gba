@@ -27,3 +27,18 @@ members = [
     "emulator/mgba-sys",
     "emulator/test-runner",
 ]
+
+exclude = [
+    "agb",
+
+    "tracker/agb-tracker",
+
+    "examples/amplitude",
+    "examples/combo",
+    "examples/hyperspace-roll",
+    "examples/the-dungeon-puzzlers-lament",
+    "examples/the-hat-chooses-the-wizard",
+    "examples/the-purple-night",
+
+    "book/games/pong",
+]

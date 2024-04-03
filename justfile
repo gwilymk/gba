@@ -11,21 +11,17 @@ build-release:
     just _build-release tracker/agb-tracker
 clippy:
     just _all-crates _clippy
-    just _clippy tools
 
 test:
     just _test-debug agb
     just _test-multiboot
-    just _test-debug agb-fixnum
-    just _test-debug agb-hashmap
     just _test-debug tracker/agb-tracker
     just _test-debug-arm agb
-    just _test-debug tools
-    just _test-debug emulator
+    
+    cargo test
 
 test-release:
     just _test-release agb
-    just _test-release agb-fixnum
     just _test-release tracker/agb-tracker
     just _test-release-arm agb
 
@@ -35,8 +31,7 @@ doctest-agb:
 check-docs:
     (cd agb && cargo doc --target=thumbv4t-none-eabi --no-deps)
     (cd tracker/agb-tracker && cargo doc --target=thumbv4t-none-eabi --no-deps)
-    just _build_docs agb-fixnum
-    just _build_docs agb-hashmap
+    cargo doc
 
 _build_docs crate:
     (cd "{{crate}}" && cargo doc --no-deps)
@@ -46,10 +41,9 @@ clean:
 
 fmt:
     just _all-crates _fmt
-    just _fmt tools
+
 fmt-check:
     just _all-crates _fmt-check
-    just _fmt-check tools
 
 run-example example:
     just _build-example "{{example}}"
@@ -129,7 +123,7 @@ addr2line *args:
     (cd agb-addr2line && cargo build --release && cd "{{invocation_directory()}}" && "$CARGO_TARGET_DIR/release/agb-addr2line" {{args}})
 
 _all-crates target:
-    for CARGO_PROJECT_FILE in agb-*/Cargo.toml agb/Cargo.toml tracker/agb-*/Cargo.toml; do \
+    for CARGO_PROJECT_FILE in agb/Cargo.toml tracker/agb-tracker/Cargo.toml Cargo.toml; do \
         PROJECT_DIR=$(dirname "$CARGO_PROJECT_FILE"); \
         just "{{target}}" "$PROJECT_DIR" || exit $?; \
     done
