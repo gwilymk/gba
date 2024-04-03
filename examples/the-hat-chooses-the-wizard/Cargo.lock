@@ -20,6 +20,7 @@ dependencies = [
  "bare-metal",
  "bilge",
  "bitflags 2.5.0",
+ "qrcodegen-no-heap",
 ]
 
 [[package]]
@@ -399,6 +400,12 @@ checksum = "e835ff2298f5721608eb1a980ecaee1aef2c132bf95ecc026a11b7bf3c01c02e"
 dependencies = [
  "unicode-ident",
 ]
+
+[[package]]
+name = "qrcodegen-no-heap"
+version = "1.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0e2c0bf8be8a1c4a4f48973dabf26943f05da2bfc2d3180aae62409dbba6f0c"
 
 [[package]]
 name = "quote"
