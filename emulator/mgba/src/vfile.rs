@@ -119,8 +119,8 @@ impl<V: VFile> VFileAlloc<V> {
 }
 
 mod vfile_extern {
-    use std::io::SeekFrom;
     use super::VFileExtensions;
+    use std::io::SeekFrom;
 
     /// Safety: Must be part of a VFileInner
     pub unsafe fn create_vfile<V: super::VFile>() -> mgba_sys::VFile {
