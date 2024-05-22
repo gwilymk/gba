@@ -4,7 +4,7 @@ use core::marker::PhantomData;
 
 use crate::{dma, fixnum::Rect, memory_mapped::MemoryMapped};
 
-use super::{tiled::BackgroundID, DISPLAY_CONTROL, HEIGHT, WIDTH};
+use super::{tiled::BackgroundId, DISPLAY_CONTROL, HEIGHT, WIDTH};
 
 /// The windows feature of the Game Boy Advance can selectively display
 /// backgrounds or objects on the screen and can selectively enable and disable
@@ -141,7 +141,7 @@ impl Window {
     /// Sets whether the given background will be rendered inside this window,
     /// must call [Windows::commit] for this change to be seen.
     #[inline(always)]
-    pub fn set_background_enable(&mut self, back: BackgroundID, enable: bool) -> &mut Self {
+    pub fn set_background_enable(&mut self, back: BackgroundId, enable: bool) -> &mut Self {
         self.set_bit(back.0 as usize, enable);
 
         self
@@ -217,7 +217,7 @@ impl MovableWindow {
     /// Sets whether the given background will be rendered inside this window,
     /// must call [Windows::commit] for this change to be seen.
     #[inline(always)]
-    pub fn set_background_enable(&mut self, back: BackgroundID, enable: bool) -> &mut Self {
+    pub fn set_background_enable(&mut self, back: BackgroundId, enable: bool) -> &mut Self {
         self.inner.set_background_enable(back, enable);
         self
     }
