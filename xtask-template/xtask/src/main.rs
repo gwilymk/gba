@@ -74,6 +74,7 @@ mod build {
         fs::{self, File},
         io::{BufWriter, Write},
         path::{Path, PathBuf},
+        time::SystemTime,
     };
 
     use agb_gbafix::GbaHeader;
@@ -123,13 +124,25 @@ mod build {
             .join(folder)
             .join(&args.cargo_metadata.packages[0].name)
             .with_extension(extension);
+        let output_file_name = elf_file.with_extension("gba");
+
+        let elf_file_mtime = get_mtime(&elf_file)?;
+        let gba_file_mtime = get_mtime(&output_file_name);
+
+        if let Ok(gba_file_mtime) = gba_file_mtime {
+            if elf_file_mtime < gba_file_mtime {
+                return Ok(output_file_name);
+            }
+        }
 
         let elf_content = fs::read(&elf_file)
             .with_context(|| format!("Failed to read from {}", elf_file.display()))?;
-        let output_file = elf_file.with_extension("gba");
 
-        let output = File::create(&output_file).with_context(|| {
-            format!("Failed to open file {} for writing", output_file.display())
+        let output = File::create(&output_file_name).with_context(|| {
+            format!(
+                "Failed to open file {} for writing",
+                output_file_name.display()
+            )
         })?;
         let mut buf_writer = BufWriter::new(output);
 
@@ -152,7 +165,14 @@ mod build {
 
         buf_writer.flush()?;
 
-        Ok(output_file)
+        Ok(output_file_name)
+    }
+
+    fn get_mtime(file: &Path) -> Result<SystemTime, anyhow::Error> {
+        fs::metadata(file)
+            .with_context(|| format!("failed to get metadata for {}", file.display()))?
+            .modified()
+            .with_context(|| format!("Failed to get modification time for {}", file.display()))
     }
 }
 
