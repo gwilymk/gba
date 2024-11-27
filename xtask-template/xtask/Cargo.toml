@@ -8,4 +8,6 @@ agb-gbafix = "0.21"
 anyhow = "1"
 cargo_metadata = "0.19.0"
 clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 xshell = "0.2"

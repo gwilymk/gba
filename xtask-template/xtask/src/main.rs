@@ -79,6 +79,7 @@ mod build {
 
     use agb_gbafix::GbaHeader;
     use anyhow::Context;
+    use serde::Deserialize;
     use xshell::{cmd, Shell};
 
     use crate::CliBuildArgs;
@@ -128,9 +129,11 @@ mod build {
 
         let elf_file_mtime = get_mtime(&elf_file)?;
         let gba_file_mtime = get_mtime(&output_file_name);
+        let cargo_file_mtime = get_mtime(&sh.current_dir().join("Cargo.toml"))?;
 
         if let Ok(gba_file_mtime) = gba_file_mtime {
-            if elf_file_mtime < gba_file_mtime {
+            if elf_file_mtime < gba_file_mtime && cargo_file_mtime < gba_file_mtime {
+                println!("Skipping generating gba file as unchanged");
                 return Ok(output_file_name);
             }
         }
@@ -145,6 +148,25 @@ mod build {
             )
         })?;
         let mut buf_writer = BufWriter::new(output);
+
+        #[derive(Deserialize, Default, Debug)]
+        struct AgbMetadata {
+            start_code: Option<String>,
+            game_title: Option<String>,
+            maker_code: Option<String>,
+            game_code: Option<String>,
+            software_version: Option<u8>,
+        }
+
+        let agb_metadata: AgbMetadata = args.cargo_metadata.packages[0]
+            .metadata
+            .get("agb")
+            .map(|metadata| {
+                serde_json::from_value(metadata.clone()).context("Failed to parse metadata")
+            })
+            .unwrap_or_else(|| Ok(Default::default()))?;
+
+        println!("{agb_metadata:#?}");
 
         agb_gbafix::write_gba_file(
             &elf_content,
