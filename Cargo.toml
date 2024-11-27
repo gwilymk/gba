@@ -28,7 +28,7 @@ members = [
     "emulator/mgba-sys",
     "emulator/test-runner",
     "emulator/screenshot-generator",
-    "website/backtrace",
+    "website/backtrace", "xtask-template/xtask",
 ]
 
 exclude = [
@@ -46,4 +46,5 @@ exclude = [
     "book/games/pong",
 
     "template",
+    "xtask-template/my_game"
 ]
