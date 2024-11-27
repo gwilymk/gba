@@ -3,7 +3,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use clap::{Parser, Subcommand};
+use build::BuildArgs;
+use clap::{Args, Parser, Subcommand};
 use xshell::Shell;
 
 const GAME_FOLDER: &str = "my_game";
@@ -18,11 +19,18 @@ struct XTaskCli {
 #[derive(Debug, Subcommand)]
 enum Command {
     Build {
-        #[arg(long, short)]
-        release: bool,
-        #[arg(long, short('d'))]
-        include_debug: bool,
+        #[command(flatten)]
+        args: CliBuildArgs,
     },
+}
+
+#[derive(Debug, Args, Clone, Default)]
+#[command(flatten_help = true)]
+struct CliBuildArgs {
+    #[arg(long, short)]
+    release: bool,
+    #[arg(long, short('d'))]
+    include_debug: bool,
 }
 
 impl Command {
@@ -49,16 +57,8 @@ impl Command {
             .exec()?;
 
         match self {
-            Command::Build {
-                release,
-                include_debug,
-            } => {
-                let build_args = build::BuildArgs {
-                    release: *release,
-                    include_debug_info: *include_debug,
-                    cargo_metadata,
-                    target_dir,
-                };
+            Command::Build { args } => {
+                let build_args = BuildArgs::from_cli_build_args(args, &cargo_metadata, &target_dir);
 
                 let output_file = build::build(&mut sh, &build_args)?;
                 println!("Built gba file to {}", output_file.display());
@@ -73,18 +73,35 @@ mod build {
     use std::{
         fs::{self, File},
         io::{BufWriter, Write},
-        path::PathBuf,
+        path::{Path, PathBuf},
     };
 
     use agb_gbafix::GbaHeader;
     use anyhow::Context;
     use xshell::{cmd, Shell};
 
+    use crate::CliBuildArgs;
+
     pub struct BuildArgs {
-        pub release: bool,
-        pub include_debug_info: bool,
-        pub cargo_metadata: cargo_metadata::Metadata,
-        pub target_dir: PathBuf,
+        release: bool,
+        include_debug_info: bool,
+        cargo_metadata: cargo_metadata::Metadata,
+        target_dir: PathBuf,
+    }
+
+    impl BuildArgs {
+        pub fn from_cli_build_args(
+            args: &CliBuildArgs,
+            cargo_metadata: &cargo_metadata::Metadata,
+            target_dir: &Path,
+        ) -> Self {
+            Self {
+                release: args.release,
+                include_debug_info: args.include_debug,
+                cargo_metadata: cargo_metadata.clone(),
+                target_dir: target_dir.to_path_buf(),
+            }
+        }
     }
 
     // Returns the path to the resulting .gba file
@@ -142,8 +159,7 @@ mod build {
 impl Default for Command {
     fn default() -> Self {
         Command::Build {
-            release: false,
-            include_debug: false,
+            args: Default::default(),
         }
     }
 }
