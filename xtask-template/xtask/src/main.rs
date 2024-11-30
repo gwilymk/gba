@@ -5,7 +5,7 @@ use std::{
 
 use build::BuildArgs;
 use clap::{Args, Parser, Subcommand};
-use xshell::Shell;
+use xshell::{cmd, Shell};
 
 const GAME_FOLDER: &str = "my_game";
 
@@ -21,6 +21,12 @@ enum Command {
     Build {
         #[command(flatten)]
         args: CliBuildArgs,
+    },
+    Run {
+        #[command(flatten)]
+        args: CliBuildArgs,
+        #[arg(long)]
+        emulator: Option<PathBuf>,
     },
 }
 
@@ -62,6 +68,16 @@ impl Command {
 
                 let output_file = build::build(&mut sh, &build_args)?;
                 println!("Built gba file to {}", output_file.display());
+            }
+            Command::Run { args, emulator } => {
+                let build_args = BuildArgs::from_cli_build_args(args, &cargo_metadata, &target_dir);
+
+                let output_file = build::build(&mut sh, &build_args)?;
+                println!("Built gba file to {}", output_file.display());
+
+                let emulator = emulator.clone().unwrap_or_else(|| PathBuf::from("mgba-qt"));
+
+                cmd!(sh, "{emulator} {output_file}").run()?;
             }
         }
 
@@ -141,6 +157,8 @@ mod build {
         let elf_content = fs::read(&elf_file)
             .with_context(|| format!("Failed to read from {}", elf_file.display()))?;
 
+        let header = gba_header_from_metadata(&args.cargo_metadata.packages[0])?;
+
         let output = File::create(&output_file_name).with_context(|| {
             format!(
                 "Failed to open file {} for writing",
@@ -148,8 +166,6 @@ mod build {
             )
         })?;
         let mut buf_writer = BufWriter::new(output);
-
-        let header = gba_header_from_metadata(&args.cargo_metadata.packages[0])?;
 
         agb_gbafix::write_gba_file(
             &elf_content,
@@ -182,14 +198,10 @@ mod build {
             })
             .unwrap_or_else(|| Ok(Default::default()))?;
 
-        let mut start_code = [0; 4];
-        start_code.copy_from_slice(agb_metadata.start_code.unwrap_or_default().as_bytes());
-        let mut game_title = [0; 12];
-        game_title.copy_from_slice(agb_metadata.game_title.unwrap_or_default().as_bytes());
-        let mut maker_code = [0; 2];
-        maker_code.copy_from_slice(agb_metadata.maker_code.unwrap_or_default().as_bytes());
-        let mut game_code = [0; 4];
-        game_code.copy_from_slice(agb_metadata.game_code.unwrap_or_default().as_bytes());
+        let start_code = to_array(agb_metadata.start_code.as_ref(), "Start code")?;
+        let game_title = to_array(agb_metadata.game_title.as_ref(), "Game title")?;
+        let maker_code = to_array(agb_metadata.maker_code.as_ref(), "Maker code")?;
+        let game_code = to_array(agb_metadata.game_code.as_ref(), "Game code")?;
         let software_version = agb_metadata.software_version.unwrap_or_default();
 
         let header = GbaHeader {
@@ -201,6 +213,19 @@ mod build {
         };
 
         Ok(header)
+    }
+
+    fn to_array<const N: usize>(
+        input: Option<&String>,
+        name: &'static str,
+    ) -> anyhow::Result<[u8; N]> {
+        let Some(input) = input else {
+            return Ok([0; N]);
+        };
+
+        input.as_bytes().try_into().map_err(|_| {
+            anyhow::anyhow!("{name} is not exactly {N} bytes long (got {})", input.len())
+        })
     }
 
     fn get_mtime(file: &Path) -> Result<SystemTime, anyhow::Error> {

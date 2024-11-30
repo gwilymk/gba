@@ -20,7 +20,7 @@ debug = true
 
 [package.metadata.agb]
 start_code = "abcd"
-game_title = "my game"
+game_title = "my game     "
 maker_code = "GC"
 game_code = "abcd"
 software_version = 1
