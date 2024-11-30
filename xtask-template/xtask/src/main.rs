@@ -149,36 +149,11 @@ mod build {
         })?;
         let mut buf_writer = BufWriter::new(output);
 
-        #[derive(Deserialize, Default, Debug)]
-        struct AgbMetadata {
-            start_code: Option<String>,
-            game_title: Option<String>,
-            maker_code: Option<String>,
-            game_code: Option<String>,
-            software_version: Option<u8>,
-        }
-
-        let agb_metadata: AgbMetadata = args.cargo_metadata.packages[0]
-            .metadata
-            .get("agb")
-            .map(|metadata| {
-                serde_json::from_value(metadata.clone()).context("Failed to parse metadata")
-            })
-            .unwrap_or_else(|| Ok(Default::default()))?;
-
-        println!("{agb_metadata:#?}");
+        let header = gba_header_from_metadata(&args.cargo_metadata.packages[0])?;
 
         agb_gbafix::write_gba_file(
             &elf_content,
-            GbaHeader {
-                start_code: [b'a', b'b', b'c', b'd'],
-                game_title: [
-                    b'a', b'b', b'c', b'd', b'e', b'f', b'g', b'h', b'i', b'j', b'k', b'l',
-                ],
-                maker_code: [b'A', b'G'],
-                game_code: [b'a', b'b', b'c', b'd'],
-                software_version: 1,
-            },
+            header,
             agb_gbafix::PaddingBehaviour::DoNotPad,
             args.include_debug_info,
             &mut buf_writer,
@@ -188,6 +163,44 @@ mod build {
         buf_writer.flush()?;
 
         Ok(output_file_name)
+    }
+
+    fn gba_header_from_metadata(package: &cargo_metadata::Package) -> anyhow::Result<GbaHeader> {
+        #[derive(Deserialize, Default, Debug)]
+        struct AgbMetadata {
+            start_code: Option<String>,
+            game_title: Option<String>,
+            maker_code: Option<String>,
+            game_code: Option<String>,
+            software_version: Option<u8>,
+        }
+        let agb_metadata: AgbMetadata = package
+            .metadata
+            .get("agb")
+            .map(|metadata| {
+                serde_json::from_value(metadata.clone()).context("Failed to parse metadata")
+            })
+            .unwrap_or_else(|| Ok(Default::default()))?;
+
+        let mut start_code = [0; 4];
+        start_code.copy_from_slice(agb_metadata.start_code.unwrap_or_default().as_bytes());
+        let mut game_title = [0; 12];
+        game_title.copy_from_slice(agb_metadata.game_title.unwrap_or_default().as_bytes());
+        let mut maker_code = [0; 2];
+        maker_code.copy_from_slice(agb_metadata.maker_code.unwrap_or_default().as_bytes());
+        let mut game_code = [0; 4];
+        game_code.copy_from_slice(agb_metadata.game_code.unwrap_or_default().as_bytes());
+        let software_version = agb_metadata.software_version.unwrap_or_default();
+
+        let header = GbaHeader {
+            start_code,
+            game_title,
+            maker_code,
+            game_code,
+            software_version,
+        };
+
+        Ok(header)
     }
 
     fn get_mtime(file: &Path) -> Result<SystemTime, anyhow::Error> {
