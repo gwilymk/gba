@@ -1,0 +1,68 @@
+name: Emergency Controls
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to take'
+        required: true
+        type: choice
+        options:
+          - disable-playground
+          - enable-playground
+          - status
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-west-2
+
+jobs:
+  emergency:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Disable Playground
+        if: inputs.action == 'disable-playground'
+        run: |
+          aws lambda put-function-concurrency \
+            --function-name agb-playground \
+            --reserved-concurrent-executions 0
+          echo "🚨 Playground DISABLED - concurrency set to 0"
+
+      - name: Enable Playground
+        if: inputs.action == 'enable-playground'
+        run: |
+          aws lambda put-function-concurrency \
+            --function-name agb-playground \
+            --reserved-concurrent-executions 10
+          echo "✅ Playground ENABLED - concurrency set to 10"
+
+      - name: Check Status
+        if: inputs.action == 'status'
+        run: |
+          echo "=== Playground Lambda ==="
+          aws lambda get-function-configuration \
+            --function-name agb-playground \
+            --query '{State: State, Concurrency: ReservedConcurrentExecutions, LastModified: LastModified}' \
+            --output table
+
+          echo ""
+          echo "=== Recent Invocations (last hour) ==="
+          aws cloudwatch get-metric-statistics \
+            --namespace AWS/Lambda \
+            --metric-name Invocations \
+            --dimensions Name=FunctionName,Value=agb-playground \
+            --start-time $(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ) \
+            --end-time $(date -u +%Y-%m-%dT%H:%M:%SZ) \
+            --period 3600 \
+            --statistics Sum \
+            --query 'Datapoints[0].Sum' \
+            --output text

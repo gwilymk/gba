@@ -1,0 +1,4 @@
+cloudflare_api_token = "your-cloudflare-api-token"
+cloudflare_zone_id   = "your-zone-id-for-agbrs-dev"
+alert_email          = ""  # Optional - leave empty if using Discord only
+discord_webhook_url  = "https://discord.com/api/webhooks/xxx/yyy"

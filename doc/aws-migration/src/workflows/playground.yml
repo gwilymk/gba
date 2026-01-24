@@ -1,0 +1,82 @@
+name: Deploy Playground
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Publish agb"]
+    types: [completed]
+
+env:
+  AWS_REGION: us-west-2
+
+# Required for OIDC authentication with AWS
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: thumbv4t-none-eabi
+          components: rust-src
+
+      - name: Install cargo-lambda
+        run: cargo install cargo-lambda
+
+      - name: Build Lambda
+        working-directory: website/play
+        run: cargo lambda build --release --arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image (ARM64)
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: agb-playground
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker buildx build --platform linux/arm64 \
+            -f website/play/docker/Lambda.dockerfile \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
+            --push .
+
+      - name: Update Lambda function
+        run: |
+          aws lambda update-function-code \
+            --function-name agb-playground \
+            --image-uri ${{ steps.login-ecr.outputs.registry }}/agb-playground:${{ github.sha }}
+
+      - name: Wait for Lambda update
+        run: |
+          aws lambda wait function-updated \
+            --function-name agb-playground
+
+      - name: Smoke test
+        run: |
+          LAMBDA_URL=$(aws lambda get-function-url-config --function-name agb-playground --query 'FunctionUrl' --output text)
+          curl -f -X POST "$LAMBDA_URL" \
+            -H "Content-Type: application/json" \
+            -d '{"code": "#![no_std]\n#![no_main]\nuse agb::prelude::*;\n#[agb::entry]\nfn main(_gba: agb::Gba) -> ! { loop {} }"}' \
+            --output /dev/null \
+            --max-time 120
+          echo "Smoke test passed!"

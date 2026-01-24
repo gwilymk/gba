@@ -1,0 +1,9 @@
+{
+  "Records": [
+    {
+      "Sns": {
+        "Message": "{\"AlarmName\":\"test-alarm\",\"NewStateValue\":\"ALARM\",\"NewStateReason\":\"Testing Discord notifications\",\"AlarmDescription\":\"Test description\",\"StateChangeTime\":\"2024-01-24T12:00:00.000Z\",\"Region\":\"us-west-2\"}"
+      }
+    }
+  ]
+}
