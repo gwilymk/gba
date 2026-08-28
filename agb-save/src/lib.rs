@@ -52,7 +52,7 @@ extern crate alloc;
 
 use alloc::vec;
 use alloc::vec::Vec;
-use core::{iter, num::NonZeroU16, num::NonZeroUsize};
+use core::{num::NonZeroU16, num::NonZeroUsize};
 
 use block::{
     Block, DataBlock, GlobalBlock, SlotHeaderBlock, SlotState, deserialize_block, serialize_block,
@@ -516,7 +516,7 @@ where
 
     fn format_storage(&mut self) -> Result<(), SaveError<Storage::Error>> {
         let sector_size = self.storage.sector_size();
-        let mut buffer = vec![0u8; sector_size];
+        let mut buffer = vec![0xffu8; sector_size];
 
         // Write global header (sector 0)
         serialize_block(
@@ -528,10 +528,10 @@ where
         // Write empty slot headers (sectors 1..num_slots+1)
         // Each logical slot gets its own physical sector initially
         let metadata_size = sector_size - SlotHeaderBlock::header_size();
-        let empty_metadata = vec![0u8; metadata_size];
+        let empty_metadata = vec![0xffu8; metadata_size];
 
         for slot in 0..self.num_slots {
-            buffer.fill(0);
+            buffer.fill(0xff);
             serialize_block(
                 Block::SlotHeader(SlotHeaderBlock::empty(slot as u8, &empty_metadata)),
                 &mut buffer,
@@ -542,7 +542,7 @@ where
         // Write a GHOST state slot header to the ghost sector (sector num_slots + 1)
         // This is the extra physical slot sector used as a staging area
         // Use logical_slot_id = 0xFF to indicate it's not associated with any slot yet
-        buffer.fill(0);
+        buffer.fill(0xff);
         serialize_block(
             Block::SlotHeader(SlotHeaderBlock::ghost(0xFF, &empty_metadata)),
             &mut buffer,
@@ -875,8 +875,8 @@ where
             .collect();
 
         // Write data blocks
-        let mut buffer = vec![0u8; sector_size];
-        let mut padded_data = vec![0u8; payload_size];
+        let mut buffer = vec![0xffu8; sector_size];
+        let mut padded_data = vec![0xffu8; payload_size];
         let mut data_offset = 0;
 
         for (i, &sector) in allocated_sectors.iter().enumerate() {
@@ -891,12 +891,12 @@ where
             let chunk_size = (data.len() - data_offset).min(payload_size);
             let chunk = &data[data_offset..data_offset + chunk_size];
 
-            // Copy data and zero-pad the rest
+            // Copy data and 0xff-pad the rest
             padded_data[..chunk_size].copy_from_slice(chunk);
-            padded_data[chunk_size..].fill(0);
+            padded_data[chunk_size..].fill(0xff);
 
             // Serialize the data block
-            buffer.fill(0);
+            buffer.fill(0xff);
             serialize_block(
                 Block::Data(DataBlock::new(next_block, &padded_data)),
                 &mut buffer,
@@ -1060,10 +1060,7 @@ where
         };
 
         if serialized_metadata.len() < metadata_in_header_size {
-            serialized_metadata.extend(iter::repeat_n(
-                0,
-                metadata_in_header_size - serialized_metadata.len(),
-            ));
+            serialized_metadata.resize(metadata_in_header_size, 0xff);
         }
 
         // Increment generation and save old slot info for later cleanup
@@ -1071,7 +1068,7 @@ where
         let old_header_sector = self.slot_info[slot].header_sector;
         let old_first_data_block = self.slot_info[slot].first_data_block;
 
-        let mut buffer = vec![0u8; sector_size];
+        let mut buffer = vec![0xffu8; sector_size];
 
         // 7. Write the new slot header to the ghost sector
         serialize_block(
@@ -1173,8 +1170,8 @@ where
         let header_sector = self.slot_info[slot].header_sector;
         let new_generation = self.slot_info[slot].generation.wrapping_add(1);
 
-        let mut buffer = vec![0u8; sector_size];
-        let empty_metadata = vec![0u8; metadata_size];
+        let mut buffer = vec![0xffu8; sector_size];
+        let empty_metadata = vec![0xffu8; metadata_size];
 
         // 1. Write slot header with state = Empty
         serialize_block(

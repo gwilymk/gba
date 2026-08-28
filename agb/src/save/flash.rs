@@ -372,7 +372,6 @@ impl ChipInfo {
     }
 
     /// Writes an entire buffer to the save media.
-    #[allow(clippy::needless_range_loop)]
     fn write_buffer(
         &self,
         offset: usize,
@@ -380,12 +379,16 @@ impl ChipInfo {
         timeout: &mut Timeout,
     ) -> Result<(), StorageError> {
         self.set_bank(offset >> BANK_SHIFT)?;
-        for i in 0..buf.len() {
+        for (i, byte) in buf.iter().enumerate() {
+            if *byte == 0xff {
+                continue;
+            }
+
             let byte_off = offset + i;
             if (byte_off & BANK_MASK) == 0 {
                 self.set_bank(byte_off >> BANK_SHIFT)?;
             }
-            self.write_byte(byte_off & BANK_MASK, buf[i], timeout)?;
+            self.write_byte(byte_off & BANK_MASK, *byte, timeout)?;
         }
         Ok(())
     }

@@ -1,5 +1,5 @@
 //! Shows how to use the save subsystem of agb. Saves the current location of the crab
-//! at the end of each frame, so when you reload the game, it'll be right back where you left it.
+//! when you press A and when you restart, loads it back where it came from
 #![no_std]
 #![no_main]
 
@@ -7,7 +7,7 @@ use agb::{
     display::{HEIGHT, Palette16, Rgb15, WIDTH, object::Object},
     fixnum::{Num, Vector2D, vec2},
     include_aseprite,
-    input::ButtonController,
+    input::{Button, ButtonController},
     save::SaveSlotManager,
 };
 use serde::{Deserialize, Serialize};
@@ -49,7 +49,7 @@ fn main(mut gba: agb::Gba) -> ! {
     // Initialize the save system with 1 slot
     let mut save_manager: SaveSlotManager = gba
         .save
-        .init_sram(1, SAVE_MAGIC)
+        .init_flash_64k(1, SAVE_MAGIC, None)
         .expect("Failed to initialize save");
 
     // Try to load existing save, or start at center
@@ -77,10 +77,12 @@ fn main(mut gba: agb::Gba) -> ! {
         );
 
         // Save the current position
-        let save_data = SaveData::from_position(position);
-        save_manager
-            .write(0, &save_data, &())
-            .expect("Failed to save");
+        if button.is_just_pressed(Button::A) {
+            let save_data = SaveData::from_position(position);
+            save_manager
+                .write(0, &save_data, &())
+                .expect("Failed to save");
+        }
 
         Object::new(sprites::IDLE.sprite(0))
             .set_pos(position.floor())
