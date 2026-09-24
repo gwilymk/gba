@@ -31,6 +31,7 @@
 extern crate alloc;
 
 pub(crate) use allocate::{Allocator, Global};
+use rustc_hash::FxHasher;
 
 #[cfg(not(feature = "allocator_api"))]
 mod allocate {
@@ -54,72 +55,19 @@ mod serde;
 use core::{
     borrow::Borrow,
     fmt::Debug,
-    hash::{BuildHasher, BuildHasherDefault, Hash},
+    hash::{Hash, Hasher},
     num::Wrapping,
     ops::Index,
 };
 
-use rustc_hash::FxHasher;
-
 mod hash_set;
-mod node;
-mod node_storage;
+mod metadata;
 
-use node::Node;
-use node_storage::NodeStorage;
+mod my_vec;
+use my_vec::MyVec;
 
 pub use hash_set::HashSet;
 
-// # Robin Hood Hash Tables
-//
-// The problem with regular hash tables where failing to find a slot for a specific
-// key will result in a linear search for the first free slot is that often these
-// slots can end up being quite far away from the original chosen location in fuller
-// hash tables. In Java, the hash table will resize when it is more than 2 thirds full
-// which is quite wasteful in terms of space. Robin Hood hash tables can be much
-// fuller before needing to resize and also keeps search times lower.
-//
-// The key concept is to keep the distance from the initial bucket chosen for a given
-// key to a minimum. We shall call this distance the "distance to the initial bucket"
-// or DIB for short. With each key - value pair, we store its DIB. When inserting
-// a value into the hash table, we check to see if there is an element in the initial
-// bucket. If there is, we move onto the next value. Then, we check to see if there
-// is already a value there and if there is, we check its DIB. If our DIB is greater
-// than or equal to the DIB of the value that is already there, we swap the working
-// value and the current entry. This continues until an empty slot is found.
-//
-// Using this technique, the average DIB is kept fairly low which decreases search
-// times. As a simple search time optimisation, the maximum DIB is kept track of
-// and so we will only need to search as far as that in order to know whether or
-// not a given element is in the hash table.
-//
-// # Deletion
-//
-// Special mention is given to deletion. Unfortunately, the maximum DIB is not
-// kept track of after deletion, since we would not only need to keep track of
-// the maximum DIB but also the number of elements which have that maximum DIB.
-//
-// In order to delete an element, we search to see if it exists. If it does,
-// we remove that element and then iterate through the array from that point
-// and move each element back one space (updating its DIB). If the DIB of the
-// element we are trying to remove is 0, then we stop this algorithm.
-//
-// This means that deletion will lower the average DIB of the elements and
-// keep searching and insertion fast.
-//
-// # Rehashing
-//
-// Currently, no incremental rehashing takes place. Once the HashMap becomes
-// more than 85% full (this value may change when I do some benchmarking),
-// a new list is allocated with double the capacity and the entire node list
-// is migrated.
-
-/// A hash map implemented very simply using robin hood hashing.
-///
-/// `HashMap` uses `FxHasher` internally, which is a very fast hashing algorithm used
-/// by rustc and firefox in non-adversarial places. It is incredibly fast, and good
-/// enough for most cases.
-///
 /// It is required that the keys implement the [`Eq`] and [`Hash`] traits, although this
 /// can be frequently achieved by using `#[derive(PartialEq, Eq, Hash)]`. If you
 /// implement these yourself, it is important that the following property holds:
@@ -171,10 +119,16 @@ pub use hash_set::HashSet;
 /// }
 /// ```
 #[derive(Clone)]
-pub struct HashMap<K, V, ALLOCATOR: Allocator = Global> {
-    nodes: NodeStorage<K, V, ALLOCATOR>,
+pub struct HashMap<K, V, DATA: Allocator = Global, METADATA: Allocator = Global> {
+    metadata: Metadata<METADATA>,
+    data: MyVec<HashMapNode<K, V>, DATA>,
+}
 
-    hasher: BuildHasherDefault<FxHasher>,
+#[derive(Clone)]
+struct HashMapNode<K, V> {
+    hash: HashType,
+    key: K,
+    value: V,
 }
 
 /// Trait for allocators that are cloneable.
@@ -184,80 +138,69 @@ impl<T: Allocator + Clone> ClonableAllocator for T {}
 impl<K, V> HashMap<K, V> {
     /// Creates a `HashMap`
     #[must_use]
-    pub const fn new() -> Self {
-        Self::new_in(Global)
+    pub fn new() -> Self {
+        Self::new_in(Global, Global)
     }
 
-    /// Creates an empty `HashMap` with specified internal size. The size must be a power of 2
-    #[must_use]
-    pub fn with_size(size: usize) -> Self {
-        Self::with_size_in(size, Global)
-    }
-
-    /// Creates an empty `HashMap` which can hold at least `capacity` elements before resizing. The actual
-    /// internal size may be larger as it must be a power of 2
+    /// Creates an empty `HashMap` which can hold at least `capacity` elements before resizing.
     #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
-        Self::with_capacity_in(capacity, Global)
+        Self::with_capacity_in(capacity, Global, Global)
     }
 }
 
-impl<K, V, ALLOCATOR: ClonableAllocator> HashMap<K, V, ALLOCATOR> {
+impl<K, V, DATA: ClonableAllocator, METADATA: ClonableAllocator> HashMap<K, V, DATA, METADATA> {
     #[must_use]
-    /// Creates an empty `HashMap` with specified internal size using the
-    /// specified allocator. The size must be a power of 2
-    pub fn with_size_in(size: usize, alloc: ALLOCATOR) -> Self {
+    /// Creates an empty `HashMap` with specified internal size
+    pub fn with_size_in(size: usize, data_alloc: DATA, metadata_alloc: METADATA) -> Self {
         Self {
-            nodes: NodeStorage::with_size_in(size, alloc),
-            hasher: BuildHasherDefault::new(),
+            metadata: Metadata::with_size(size, metadata_alloc),
+            data: MyVec::with_capacity_in(size, data_alloc),
         }
     }
 
     #[must_use]
-    /// Creates a `HashMap` with a specified allocator
-    pub const fn new_in(alloc: ALLOCATOR) -> Self {
+    /// Creates a `HashMap` with a specified allocator for data and metadata
+    pub fn new_in(data_alloc: DATA, metadata_alloc: METADATA) -> Self {
         Self {
-            nodes: NodeStorage::new_in(alloc),
-            hasher: BuildHasherDefault::new(),
+            metadata: Metadata::new_in(metadata_alloc),
+            data: MyVec::new_in(data_alloc),
         }
     }
 
-    /// Returns a reference to the underlying allocator
-    pub fn allocator(&self) -> &ALLOCATOR {
-        self.nodes.allocator()
+    /// Returns a reference to the underlying allocator for data
+    pub fn data_allocator(&self) -> &DATA {
+        self.data.allocator()
+    }
+
+    /// Returns a reference to the underlying allocator for metadata
+    pub fn metadata_allocator(&self) -> &METADATA {
+        self.metadata.allocator()
     }
 
     /// Creates an empty `HashMap` which can hold at least `capacity` elements before resizing. The actual
     /// internal size may be larger as it must be a power of 2
-    ///
-    /// # Panics
-    ///
-    /// Panics if capacity >= 2^31 * 0.6
     #[must_use]
-    pub fn with_capacity_in(capacity: usize, alloc: ALLOCATOR) -> Self {
-        for i in 0..32 {
-            let attempted_size = 1usize << i;
-            if number_before_resize(attempted_size) > capacity {
-                return Self::with_size_in(attempted_size, alloc);
-            }
-        }
-
-        panic!(
-            "Failed to come up with a size which satisfies capacity {}",
+    pub fn with_capacity_in(capacity: usize, data_alloc: DATA, metadata_alloc: METADATA) -> Self {
+        let final_size = if capacity.is_power_of_two() {
             capacity
-        );
+        } else {
+            capacity.next_power_of_two()
+        };
+
+        Self::with_size_in(final_size, data_alloc, metadata_alloc)
     }
 
     /// Returns the number of elements in the map
     #[must_use]
     pub fn len(&self) -> usize {
-        self.nodes.len()
+        self.data.len()
     }
 
-    /// Returns the number of elements the map can hold
+    /// Returns the number of elements the map can hold before resizing
     #[must_use]
     pub fn capacity(&self) -> usize {
-        self.nodes.capacity()
+        self.metadata.capacity()
     }
 
     /// An iterator visiting all keys in an arbitrary order
@@ -277,21 +220,20 @@ impl<K, V, ALLOCATOR: ClonableAllocator> HashMap<K, V, ALLOCATOR> {
 
     /// Removes all elements from the map
     pub fn clear(&mut self) {
-        self.nodes.clear();
+        self.data.clear();
+        self.metadata.clear();
     }
 
     /// An iterator visiting all key-value pairs in an arbitrary order
     pub fn iter(&self) -> impl Iterator<Item = (&'_ K, &'_ V)> {
-        Iter {
-            map: self,
-            at: 0,
-            num_found: 0,
-        }
+        self.data.iter().map(|node| (&node.key, &node.value))
     }
 
     /// An iterator visiting all key-value pairs in an arbitrary order, with mutable references to the values
     pub fn iter_mut(&mut self) -> impl Iterator<Item = (&'_ K, &'_ mut V)> {
-        self.nodes.iter_mut().filter_map(Node::key_value_mut)
+        self.data
+            .iter_mut()
+            .map(|node| (&node.key, &mut node.value))
     }
 
     /// Retains only the elements specified by the predicate `f`.
@@ -299,13 +241,37 @@ impl<K, V, ALLOCATOR: ClonableAllocator> HashMap<K, V, ALLOCATOR> {
     where
         F: FnMut(&K, &mut V) -> bool,
     {
-        self.nodes.retain(f);
+        todo!()
     }
 
     /// Returns `true` if the map contains no elements
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    /// # Panics
+    ///
+    /// If the location doesn't actually exist
+    fn remove_from_internal_location(&mut self, location: usize) -> HashMapNode<K, V> {
+        self.metadata.tombstone(location);
+        let location = self.metadata.unwrap_slot(location);
+
+        let old_value = self.data.swap_remove(location);
+
+        if location != self.data.len() {
+            let new_entry_at_location = &self.data[location];
+            let new_entry_slot_id = self
+                .metadata
+                .find_entry_matching(new_entry_at_location.hash, |slot| {
+                    self.metadata.unwrap_slot(slot) == self.data.len()
+                })
+                .expect("We just moved this, so it should have existed");
+
+            self.metadata.set_slot_id(new_entry_slot_id, location);
+        }
+
+        old_value
     }
 }
 
@@ -315,7 +281,7 @@ impl<K, V> Default for HashMap<K, V> {
     }
 }
 
-impl<K, V, ALLOCATOR: ClonableAllocator> HashMap<K, V, ALLOCATOR>
+impl<K, V, DATA: ClonableAllocator, METADATA: ClonableAllocator> HashMap<K, V, DATA, METADATA>
 where
     K: Eq + Hash,
 {
@@ -328,35 +294,35 @@ where
     /// without being identical.
     #[doc(alias("set", "add"))]
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
-        let hash = self.hash(&key);
+        let hash = hash(&key);
 
-        if let Some(location) = self.nodes.location(&key, hash) {
-            Some(
-                // SAFETY: location is valid due to the above
-                unsafe {
-                    self.nodes
-                        .replace_at_location_unchecked(location, key, value)
-                },
-            )
-        } else {
-            self.nodes.insert_new(key, value, hash);
-
-            None
+        if let Some(current_index) = self.metadata.find_entry_matching(hash, |slot| {
+            let node_id = self.metadata.unwrap_slot(slot);
+            self.data[node_id].key == key
+        }) {
+            let node_id = self.metadata.unwrap_slot(current_index);
+            return Some(core::mem::replace(&mut self.data[node_id].value, value));
         }
+
+        self.insert_new(hash, key, value);
+
+        None
     }
 
-    /// # Safety
-    ///
-    /// - `key` must not currently be in the hash map
-    unsafe fn insert_new_and_get(&mut self, key: K, value: V, hash: HashType) -> &'_ mut V {
-        let location = self.nodes.insert_new(key, value, hash);
+    fn insert_new(&mut self, hash: HashType, key: K, value: V) -> &mut V {
+        let idx = self.data.len();
+        self.data.push(HashMapNode { hash, key, value });
 
-        // SAFETY: location is always valid
-        unsafe {
-            self.nodes
-                .node_at_unchecked_mut(location)
-                .value_mut_unchecked()
+        match self.metadata.check_size(idx + 1) {
+            Err(Resize::Grow) => self.metadata.grow(self.data.iter().map(|node| node.hash)),
+            Err(Resize::RehashInPlace) => self
+                .metadata
+                .rehash_in_place(self.data.iter().map(|node| node.hash)),
+            Ok(_) => {}
         }
+
+        self.metadata.insert_new(hash, idx);
+        &mut self.data[idx].value
     }
 
     /// Returns `true` if the map contains a value for the specified key.
@@ -365,8 +331,14 @@ where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        let hash = self.hash(k);
-        self.nodes.location(k, hash).is_some()
+        let hash = hash(k);
+
+        self.metadata
+            .find_entry_matching(hash, |slot| {
+                let node_id = self.metadata.unwrap_slot(slot);
+                self.data[node_id].key.borrow() == k
+            })
+            .is_some()
     }
 
     /// Returns the key-value pair corresponding to the supplied key
@@ -375,17 +347,16 @@ where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        let hash = self.hash(key);
+        let hash = hash(key);
 
-        let location = self.nodes.location(key, hash)?;
-        Some(
-            // SAFETY: we know that a node exists and has a value from the location call above
-            unsafe {
-                self.nodes
-                    .node_at_unchecked(location)
-                    .key_value_ref_unchecked()
-            },
-        )
+        let location = self.metadata.find_entry_matching(hash, |slot| {
+            let node_id = self.metadata.unwrap_slot(slot);
+            self.data[node_id].key.borrow() == key
+        })?;
+
+        let data = &self.data[self.metadata.unwrap_slot(location)];
+
+        Some((&data.key, &data.value))
     }
 
     /// Returns a reference to the value corresponding to the key. Returns [`None`] if there is
@@ -429,17 +400,16 @@ where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        let hash = self.hash(key);
+        let hash = hash(key);
 
-        let location = self.nodes.location(key, hash)?;
-        Some(
-            // SAFETY: we know that a node exists and has a value from the location call above
-            unsafe {
-                self.nodes
-                    .node_at_unchecked_mut(location)
-                    .value_mut_unchecked()
-            },
-        )
+        let location = self.metadata.find_entry_matching(hash, |slot| {
+            let node_id = self.metadata.unwrap_slot(slot);
+            self.data[node_id].key.borrow() == key
+        })?;
+
+        let data = &mut self.data[location];
+
+        Some(&mut data.value)
     }
 
     /// Removes the given key from the map. Returns the current value if it existed, or [`None`]
@@ -459,81 +429,70 @@ where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        let hash = self.hash(key);
+        let hash = hash(key);
 
-        self.nodes
-            .location(key, hash)
-            .map(|location| self.nodes.remove_from_location(location))
+        let location = self.metadata.find_entry_matching(hash, |slot| {
+            let node_id = self.metadata.unwrap_slot(slot);
+            self.data[node_id].key.borrow() == key
+        })?;
+
+        Some(self.remove_from_internal_location(location).value)
     }
 }
 
-impl<K, V, ALLOCATOR: ClonableAllocator> HashMap<K, V, ALLOCATOR>
+#[expect(clippy::cast_possible_truncation)]
+fn hash<Q>(key: &Q) -> HashType
 where
-    K: Hash,
+    Q: Hash + ?Sized,
 {
-    fn hash<Q>(&self, key: &Q) -> HashType
-    where
-        K: Borrow<Q>,
-        Q: Hash + ?Sized,
-    {
-        let result = self.hasher.hash_one(key);
+    let mut hasher = FxHasher::default();
+    key.hash(&mut hasher);
 
-        // we want to allow truncation here since we're reducing 64 bits to 32
-        #[allow(clippy::cast_possible_truncation)]
-        let reduced = (result as u32) ^ ((result >> 32) as u32);
-        HashType::bit_mix(reduced)
-    }
+    HashType::bit_mix(hasher.finish() as u32)
 }
 
 /// An iterator over entries of a [`HashMap`]
 ///
 /// This struct is created using the `into_iter()` method on [`HashMap`]. See its
 /// documentation for more.
-pub struct Iter<'a, K: 'a, V: 'a, ALLOCATOR: ClonableAllocator> {
-    map: &'a HashMap<K, V, ALLOCATOR>,
+pub struct Iter<'a, K: 'a, V: 'a, DATA: ClonableAllocator, METADATA: ClonableAllocator> {
+    map: &'a HashMap<K, V, DATA, METADATA>,
     at: usize,
-    num_found: usize,
 }
 
-impl<'a, K, V, ALLOCATOR: ClonableAllocator> Iterator for Iter<'a, K, V, ALLOCATOR> {
+impl<'a, K, V, DATA: ClonableAllocator, METADATA: ClonableAllocator> Iterator
+    for Iter<'a, K, V, DATA, METADATA>
+{
     type Item = (&'a K, &'a V);
 
     fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            if self.at >= self.map.nodes.backing_vec_size() || self.num_found == self.map.len() {
-                return None;
-            }
-
-            let node = &self.map.nodes.node_at(self.at);
-            self.at += 1;
-
-            if let Some(key_value) = node.key_value_ref() {
-                self.num_found += 1;
-                return Some(key_value);
-            }
+        if self.at == self.map.data.len() {
+            return None;
         }
+
+        let entry = &self.map.data[self.at];
+        self.at += 1;
+        Some((&entry.key, &entry.value))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (
-            self.map.len() - self.num_found,
-            Some(self.map.len() - self.num_found),
-        )
+        (self.map.len() - self.at, Some(self.map.len() - self.at))
     }
 }
 
-impl<K, V, ALLOCATOR: ClonableAllocator> ExactSizeIterator for Iter<'_, K, V, ALLOCATOR> {}
+impl<K, V, DATA: ClonableAllocator, METADATA: ClonableAllocator> ExactSizeIterator
+    for Iter<'_, K, V, DATA, METADATA>
+{
+}
 
-impl<'a, K, V, ALLOCATOR: ClonableAllocator> IntoIterator for &'a HashMap<K, V, ALLOCATOR> {
+impl<'a, K, V, DATA: ClonableAllocator, METADATA: ClonableAllocator> IntoIterator
+    for &'a HashMap<K, V, DATA, METADATA>
+{
     type Item = (&'a K, &'a V);
-    type IntoIter = Iter<'a, K, V, ALLOCATOR>;
+    type IntoIter = Iter<'a, K, V, DATA, METADATA>;
 
     fn into_iter(self) -> Self::IntoIter {
-        Iter {
-            map: self,
-            at: 0,
-            num_found: 0,
-        }
+        Iter { map: self, at: 0 }
     }
 }
 
@@ -541,78 +500,63 @@ impl<'a, K, V, ALLOCATOR: ClonableAllocator> IntoIterator for &'a HashMap<K, V, 
 ///
 /// This struct is created using the `into_iter()` method on [`HashMap`] as part of its implementation
 /// of the `IntoIterator` trait.
-pub struct IterOwned<K, V, ALLOCATOR: Allocator = Global> {
-    map: HashMap<K, V, ALLOCATOR>,
-    at: usize,
-    num_found: usize,
+pub struct IterOwned<K, V, DATA: ClonableAllocator, METADATA: ClonableAllocator> {
+    map: HashMap<K, V, DATA, METADATA>,
 }
 
-impl<K, V, ALLOCATOR: ClonableAllocator> Iterator for IterOwned<K, V, ALLOCATOR> {
+impl<K, V, DATA: ClonableAllocator, METADATA: ClonableAllocator> Iterator
+    for IterOwned<K, V, DATA, METADATA>
+{
     type Item = (K, V);
 
     fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            if self.at >= self.map.nodes.backing_vec_size() || self.num_found == self.map.len() {
-                return None;
-            }
-
-            let maybe_kv = self.map.nodes.node_at_mut(self.at).take_key_value();
-            self.at += 1;
-
-            if let Some((k, v, _)) = maybe_kv {
-                self.num_found += 1;
-                return Some((k, v));
-            }
-        }
+        let value = self.map.data.pop()?;
+        Some((value.key, value.value))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (
-            self.map.len() - self.num_found,
-            Some(self.map.len() - self.num_found),
-        )
+        (self.map.len(), Some(self.map.len()))
     }
 }
 
-impl<K, V, ALLOCATOR: ClonableAllocator> ExactSizeIterator for IterOwned<K, V, ALLOCATOR> {}
+impl<K, V, DATA: ClonableAllocator, METADATA: ClonableAllocator> ExactSizeIterator
+    for IterOwned<K, V, DATA, METADATA>
+{
+}
 
 /// An iterator over entries of a [`HashMap`]
 ///
 /// This struct is created using the `into_iter()` method on [`HashMap`] as part of its implementation
 /// of the `IntoIterator` trait.
-impl<K, V, ALLOCATOR: ClonableAllocator> IntoIterator for HashMap<K, V, ALLOCATOR> {
+impl<K, V, DATA: ClonableAllocator, METADATA: ClonableAllocator> IntoIterator
+    for HashMap<K, V, DATA, METADATA>
+{
     type Item = (K, V);
-    type IntoIter = IterOwned<K, V, ALLOCATOR>;
+    type IntoIter = IterOwned<K, V, DATA, METADATA>;
 
     fn into_iter(self) -> Self::IntoIter {
-        IterOwned {
-            map: self,
-            at: 0,
-            num_found: 0,
-        }
+        IterOwned { map: self }
     }
 }
 
 mod entries {
-    use crate::allocate::Allocator;
     use core::hash::Hash;
 
     use super::{ClonableAllocator, HashMap, HashType};
 
     /// A view into an occupied entry in a `HashMap`. This is part of the [`crate::Entry`] enum.
-    pub struct OccupiedEntry<'a, K: 'a, V: 'a, ALLOCATOR: Allocator> {
+    pub struct OccupiedEntry<'a, K: 'a, V: 'a, DATA: ClonableAllocator, METADATA: ClonableAllocator> {
         key: K,
-        map: &'a mut HashMap<K, V, ALLOCATOR>,
+        map: &'a mut HashMap<K, V, DATA, METADATA>,
         location: usize,
     }
 
-    impl<'a, K: 'a, V: 'a, ALLOCATOR: ClonableAllocator> OccupiedEntry<'a, K, V, ALLOCATOR> {
-        /// # Safety
-        ///
-        /// You must call this with a valid location (one where the entry is defined)
-        pub(crate) unsafe fn new(
+    impl<'a, K: 'a, V: 'a, DATA: ClonableAllocator, METADATA: ClonableAllocator>
+        OccupiedEntry<'a, K, V, DATA, METADATA>
+    {
+        pub(crate) fn new(
             key: K,
-            map: &'a mut HashMap<K, V, ALLOCATOR>,
+            map: &'a mut HashMap<K, V, DATA, METADATA>,
             location: usize,
         ) -> Self {
             Self { key, map, location }
@@ -625,19 +569,16 @@ mod entries {
 
         /// Take the ownership of the key and value from the map.
         pub fn remove_entry(self) -> (K, V) {
-            let old_value = self.map.nodes.remove_from_location(self.location);
-            (self.key, old_value)
+            let old_value = self.map.remove_from_internal_location(self.location);
+
+            (self.key, old_value.value)
         }
 
         /// Gets a reference to the value in the entry.
         pub fn get(&self) -> &V {
-            // SAFETY: This can only be constructed with valid locations
-            unsafe {
-                self.map
-                    .nodes
-                    .node_at_unchecked(self.location)
-                    .value_ref_unchecked()
-            }
+            let slot_id = self.map.metadata.unwrap_slot(self.location);
+            let kv = &self.map.data[slot_id];
+            &kv.value
         }
 
         /// Gets a mutable reference to the value in the entry.
@@ -647,13 +588,9 @@ mod entries {
         ///
         /// [`into_mut`]: Self::into_mut
         pub fn get_mut(&mut self) -> &mut V {
-            // SAFETY: This can only be constructed with valid locations
-            unsafe {
-                self.map
-                    .nodes
-                    .node_at_unchecked_mut(self.location)
-                    .value_mut_unchecked()
-            }
+            let slot_id = self.map.metadata.unwrap_slot(self.location);
+            let kv = &mut self.map.data[slot_id];
+            &mut kv.value
         }
 
         /// Converts the `OccupiedEntry` into a mutable reference to the value in the entry with
@@ -663,47 +600,37 @@ mod entries {
         ///
         /// [`get_mut`]: Self::get_mut
         pub fn into_mut(self) -> &'a mut V {
-            // SAFETY: This can only be constructed with valid locations
-            unsafe {
-                self.map
-                    .nodes
-                    .node_at_unchecked_mut(self.location)
-                    .value_mut_unchecked()
-            }
+            let slot_id = self.map.metadata.unwrap_slot(self.location);
+            let kv = &mut self.map.data[slot_id];
+            &mut kv.value
         }
 
         /// Sets the value of the entry and returns the entry's old value.
         pub fn insert(&mut self, value: V) -> V {
-            // SAFETY: This can only be constructed with valid locations
-            unsafe {
-                self.map
-                    .nodes
-                    .node_at_unchecked_mut(self.location)
-                    .replace_value_unchecked(value)
-            }
+            let slot_id = self.map.metadata.unwrap_slot(self.location);
+            core::mem::replace(&mut self.map.data[slot_id].value, value)
         }
 
         /// Takes the value out of the entry and returns it.
         pub fn remove(self) -> V {
-            self.map.nodes.remove_from_location(self.location)
+            self.map.remove_from_internal_location(self.location).value
         }
     }
 
     /// A view into a vacant entry in a `HashMap`. It is part of the [`crate::Entry`] enum.
-    pub struct VacantEntry<'a, K: 'a, V: 'a, ALLOCATOR: Allocator> {
+    pub struct VacantEntry<'a, K: 'a, V: 'a, DATA: ClonableAllocator, METADATA: ClonableAllocator> {
         key: K,
-        map: &'a mut HashMap<K, V, ALLOCATOR>,
+        map: &'a mut HashMap<K, V, DATA, METADATA>,
         hash: HashType,
     }
 
-    impl<'a, K: 'a, V: 'a, ALLOCATOR: ClonableAllocator> VacantEntry<'a, K, V, ALLOCATOR> {
-        /// # Safety
-        ///
-        /// - The entry `key` must not exist in the hashmap `map`
-        pub(crate) unsafe fn new(
+    impl<'a, K: 'a, V: 'a, DATA: ClonableAllocator, METADATA: ClonableAllocator>
+        VacantEntry<'a, K, V, DATA, METADATA>
+    {
+        pub(crate) fn new(
             key: K,
+            map: &'a mut HashMap<K, V, DATA, METADATA>,
             hash: HashType,
-            map: &'a mut HashMap<K, V, ALLOCATOR>,
         ) -> Self {
             Self { key, map, hash }
         }
@@ -723,27 +650,28 @@ mod entries {
         where
             K: Hash + Eq,
         {
-            // SAFETY: by construction, this doesn't already exist in the hashmap and we were given the hash and key
-            unsafe { self.map.insert_new_and_get(self.key, value, self.hash) }
+            self.map.insert_new(self.hash, self.key, value)
         }
     }
 }
 
 pub use entries::{OccupiedEntry, VacantEntry};
 
+use crate::metadata::{Metadata, Resize};
+
 /// A view into a single entry in a map, which may be vacant or occupied.
 ///
 /// This is constructed using the [`entry`] method on [`HashMap`]
 ///
 /// [`entry`]: HashMap::entry()
-pub enum Entry<'a, K: 'a, V: 'a, ALLOCATOR: Allocator = Global> {
+pub enum Entry<'a, K: 'a, V: 'a, DATA: ClonableAllocator, METADATA: ClonableAllocator> {
     /// An occupied entry
-    Occupied(OccupiedEntry<'a, K, V, ALLOCATOR>),
+    Occupied(OccupiedEntry<'a, K, V, DATA, METADATA>),
     /// A vacant entry
-    Vacant(VacantEntry<'a, K, V, ALLOCATOR>),
+    Vacant(VacantEntry<'a, K, V, DATA, METADATA>),
 }
 
-impl<'a, K, V, ALLOCATOR: ClonableAllocator> Entry<'a, K, V, ALLOCATOR>
+impl<'a, K, V, DATA: ClonableAllocator, METADATA: ClonableAllocator> Entry<'a, K, V, DATA, METADATA>
 where
     K: Hash + Eq,
 {
@@ -824,25 +752,22 @@ where
     }
 }
 
-impl<K, V, ALLOCATOR: ClonableAllocator> HashMap<K, V, ALLOCATOR>
+impl<K, V, DATA: ClonableAllocator, METADATA: ClonableAllocator> HashMap<K, V, DATA, METADATA>
 where
     K: Hash + Eq,
 {
     /// Gets the given key's corresponding entry in the map for in-place manipulation.
-    pub fn entry(&mut self, key: K) -> Entry<'_, K, V, ALLOCATOR> {
-        let hash = self.hash(&key);
-        let location = self.nodes.location(&key, hash);
+    pub fn entry(&mut self, key: K) -> Entry<'_, K, V, DATA, METADATA> {
+        let hash = hash(&key);
+        let location = self.metadata.find_entry_matching(hash, |location| {
+            let slot_id = self.metadata.unwrap_slot(location);
+            self.data[slot_id].key == key
+        });
 
         if let Some(location) = location {
-            Entry::Occupied(
-                // SAFETY: location is valid by the call to location above
-                unsafe { OccupiedEntry::new(key, self, location) },
-            )
+            Entry::Occupied(OccupiedEntry::new(key, self, location))
         } else {
-            Entry::Vacant(
-                // SAFETY: item doesn't exist yet and the hash is correct here
-                unsafe { VacantEntry::new(key, hash, self) },
-            )
+            Entry::Vacant(VacantEntry::new(key, self, hash))
         }
     }
 }
@@ -913,11 +838,8 @@ where
     }
 }
 
-const fn number_before_resize(capacity: usize) -> usize {
-    capacity * 3 / 5
-}
-
 #[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
 pub(crate) struct HashType(u32);
 
 impl From<usize> for HashType {
@@ -929,10 +851,6 @@ impl From<usize> for HashType {
 }
 
 impl HashType {
-    pub(crate) const fn new() -> Self {
-        Self(0)
-    }
-
     // 32 bit mix function from here: https://github.com/skeeto/hash-prospector
     fn bit_mix(key: u32) -> Self {
         let mut key = Wrapping(key);
@@ -971,20 +889,20 @@ mod test {
 
     #[test]
     fn can_create_with_size() {
-        let map: HashMap<i32, i32, Global> = HashMap::with_size_in(2, Global);
+        let map: HashMap<i32, i32> = HashMap::with_size_in(2, Global, Global);
         assert_eq!(map.len(), 0);
     }
 
     #[test]
     fn can_create_with_capacity() {
-        let map: HashMap<i32, i32, Global> = HashMap::with_capacity_in(0, Global);
+        let map: HashMap<i32, i32> = HashMap::with_capacity_in(0, Global, Global);
         assert_eq!(map.len(), 0);
     }
 
     #[test]
     #[should_panic]
     fn cannot_create_with_overflows() {
-        let _ = HashMap::<i32, i32, Global>::with_capacity_in((1 << 31) * 3 / 5, Global);
+        let _ = HashMap::<i32, i32>::with_capacity_in((1 << 31) * 3 / 5, Global, Global);
     }
 
     #[test]
@@ -1173,6 +1091,9 @@ mod test {
             let command = rng.next_i32().rem_euclid(2);
             let key = rng.next_i32().rem_euclid(answers.len().try_into().unwrap());
             let value = rng.next_i32();
+
+            extern crate std;
+            std::dbg!(command, key, value);
 
             match command {
                 0 => {

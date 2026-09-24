@@ -51,46 +51,46 @@ use super::HashMap;
 /// }
 /// ```
 #[derive(Clone)]
-pub struct HashSet<K, ALLOCATOR: Allocator = Global> {
-    map: HashMap<K, (), ALLOCATOR>,
+pub struct HashSet<K, DATA: Allocator = Global, METADATA: Allocator = Global> {
+    map: HashMap<K, (), DATA, METADATA>,
 }
 
 impl<K> HashSet<K> {
     /// Creates a `HashSet`
     #[must_use]
-    pub const fn new() -> Self {
-        Self::new_in(Global)
+    pub fn new() -> Self {
+        Self::new_in(Global, Global)
     }
 
     /// Creates an empty `HashSet` with specified internal size. The size must be a power of 2
     #[must_use]
     pub fn with_size(size: usize) -> Self {
-        Self::with_size_in(size, Global)
+        Self::with_size_in(size, Global, Global)
     }
 
     /// Creates an empty `HashSet` which can hold at least `capacity` elements before resizing. The actual
     /// internal size may be larger as it must be a power of 2
     #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
-        Self::with_capacity_in(capacity, Global)
+        Self::with_capacity_in(capacity, Global, Global)
     }
 }
 
-impl<K, ALLOCATOR: ClonableAllocator> HashSet<K, ALLOCATOR> {
+impl<K, DATA: ClonableAllocator, METADATA: ClonableAllocator> HashSet<K, DATA, METADATA> {
     /// Creates an empty `HashSet` with specified internal size using the specified allocator.
     /// The size must be a power of 2
     #[must_use]
-    pub fn with_size_in(size: usize, alloc: ALLOCATOR) -> Self {
+    pub fn with_size_in(size: usize, data_alloc: DATA, metadata_alloc: METADATA) -> Self {
         Self {
-            map: HashMap::with_size_in(size, alloc),
+            map: HashMap::with_size_in(size, data_alloc, metadata_alloc),
         }
     }
 
     /// Creates a `HashSet` with a specified allocator
     #[must_use]
-    pub const fn new_in(alloc: ALLOCATOR) -> Self {
+    pub fn new_in(data_alloc: DATA, metadata_alloc: METADATA) -> Self {
         Self {
-            map: HashMap::new_in(alloc),
+            map: HashMap::new_in(data_alloc, metadata_alloc),
         }
     }
 
@@ -101,15 +101,20 @@ impl<K, ALLOCATOR: ClonableAllocator> HashSet<K, ALLOCATOR> {
     ///
     /// Panics if capacity >= 2^31 * 0.6
     #[must_use]
-    pub fn with_capacity_in(capacity: usize, alloc: ALLOCATOR) -> Self {
+    pub fn with_capacity_in(capacity: usize, data_alloc: DATA, metadata_alloc: METADATA) -> Self {
         Self {
-            map: HashMap::with_capacity_in(capacity, alloc),
+            map: HashMap::with_capacity_in(capacity, data_alloc, metadata_alloc),
         }
     }
 
-    /// Returns a reference to the underlying allocator
-    pub fn allocator(&self) -> &ALLOCATOR {
-        self.map.allocator()
+    /// Returns a reference to the underlying data allocator
+    pub fn data_allocator(&self) -> &DATA {
+        self.map.data_allocator()
+    }
+
+    /// Returns a reference to the underlying metadata allocator
+    pub fn metadata_allocator(&self) -> &METADATA {
+        self.map.metadata_allocator()
     }
 
     /// Returns the number of elements in the set
@@ -155,7 +160,7 @@ impl<K> Default for HashSet<K> {
     }
 }
 
-impl<K, ALLOCATOR: ClonableAllocator> HashSet<K, ALLOCATOR>
+impl<K, DATA: ClonableAllocator, METADATA: ClonableAllocator> HashSet<K, DATA, METADATA>
 where
     K: Eq + Hash,
 {
@@ -259,7 +264,7 @@ where
     /// ```
     pub fn difference<'a>(
         &'a self,
-        other: &'a HashSet<K, ALLOCATOR>,
+        other: &'a HashSet<K, DATA, METADATA>,
     ) -> impl Iterator<Item = &'a K> {
         self.iter().filter(|k| !other.contains(k))
     }
@@ -282,7 +287,7 @@ where
     /// ```
     pub fn symmetric_difference<'a>(
         &'a self,
-        other: &'a HashSet<K, ALLOCATOR>,
+        other: &'a HashSet<K, DATA, METADATA>,
     ) -> impl Iterator<Item = &'a K> {
         self.iter()
             .filter(|k| !other.contains(k))
@@ -308,7 +313,7 @@ where
     /// ```
     pub fn intersection<'a>(
         &'a self,
-        other: &'a HashSet<K, ALLOCATOR>,
+        other: &'a HashSet<K, DATA, METADATA>,
     ) -> impl Iterator<Item = &'a K> {
         let (smaller, larger) = if self.len() < other.len() {
             (self, other)
@@ -337,7 +342,10 @@ where
     /// assert_eq!(union.len(), 4);
     /// assert_eq!(HashSet::from_iter(union), HashSet::from([&1, &2, &3, &4]));
     /// ```
-    pub fn union<'a>(&'a self, other: &'a HashSet<K, ALLOCATOR>) -> impl Iterator<Item = &'a K> {
+    pub fn union<'a>(
+        &'a self,
+        other: &'a HashSet<K, DATA, METADATA>,
+    ) -> impl Iterator<Item = &'a K> {
         let (smaller, larger) = if self.len() < other.len() {
             (self, other)
         } else {
@@ -348,9 +356,11 @@ where
     }
 }
 
-impl<K, ALLOCATOR: ClonableAllocator> IntoIterator for HashSet<K, ALLOCATOR> {
+impl<K, DATA: ClonableAllocator, METADATA: ClonableAllocator> IntoIterator
+    for HashSet<K, DATA, METADATA>
+{
     type Item = K;
-    type IntoIter = IterOwned<K, ALLOCATOR>;
+    type IntoIter = IterOwned<K, DATA, METADATA>;
 
     fn into_iter(self) -> Self::IntoIter {
         IterOwned {
@@ -363,11 +373,13 @@ impl<K, ALLOCATOR: ClonableAllocator> IntoIterator for HashSet<K, ALLOCATOR> {
 ///
 /// This struct is created using the `into_iter()` method on [`HashSet`] as part of its implementation
 /// of the `IntoIterator` trait.
-pub struct IterOwned<K, ALLOCATOR: ClonableAllocator> {
-    map_iter: super::IterOwned<K, (), ALLOCATOR>,
+pub struct IterOwned<K, DATA: ClonableAllocator, METADATA: ClonableAllocator> {
+    map_iter: super::IterOwned<K, (), DATA, METADATA>,
 }
 
-impl<K, ALLOCATOR: ClonableAllocator> Iterator for IterOwned<K, ALLOCATOR> {
+impl<K, DATA: ClonableAllocator, METADATA: ClonableAllocator> Iterator
+    for IterOwned<K, DATA, METADATA>
+{
     type Item = K;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -379,11 +391,16 @@ impl<K, ALLOCATOR: ClonableAllocator> Iterator for IterOwned<K, ALLOCATOR> {
     }
 }
 
-impl<K, ALLOCATOR: ClonableAllocator> ExactSizeIterator for IterOwned<K, ALLOCATOR> {}
+impl<K, DATA: ClonableAllocator, METADATA: ClonableAllocator> ExactSizeIterator
+    for IterOwned<K, DATA, METADATA>
+{
+}
 
-impl<'a, K, ALLOCATOR: ClonableAllocator> IntoIterator for &'a HashSet<K, ALLOCATOR> {
+impl<'a, K, DATA: ClonableAllocator, METADATA: ClonableAllocator> IntoIterator
+    for &'a HashSet<K, DATA, METADATA>
+{
     type Item = &'a K;
-    type IntoIter = Iter<'a, K, ALLOCATOR>;
+    type IntoIter = Iter<'a, K, DATA, METADATA>;
 
     fn into_iter(self) -> Self::IntoIter {
         Iter {
@@ -392,11 +409,13 @@ impl<'a, K, ALLOCATOR: ClonableAllocator> IntoIterator for &'a HashSet<K, ALLOCA
     }
 }
 
-pub struct Iter<'a, K, ALLOCATOR: ClonableAllocator> {
-    map_iter: super::Iter<'a, K, (), ALLOCATOR>,
+pub struct Iter<'a, K, DATA: ClonableAllocator, METADATA: ClonableAllocator> {
+    map_iter: super::Iter<'a, K, (), DATA, METADATA>,
 }
 
-impl<'a, K, ALLOCATOR: ClonableAllocator> Iterator for Iter<'a, K, ALLOCATOR> {
+impl<'a, K, DATA: ClonableAllocator, METADATA: ClonableAllocator> Iterator
+    for Iter<'a, K, DATA, METADATA>
+{
     type Item = &'a K;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -408,7 +427,10 @@ impl<'a, K, ALLOCATOR: ClonableAllocator> Iterator for Iter<'a, K, ALLOCATOR> {
     }
 }
 
-impl<K, ALLOCATOR: ClonableAllocator> ExactSizeIterator for Iter<'_, K, ALLOCATOR> {}
+impl<K, DATA: ClonableAllocator, METADATA: ClonableAllocator> ExactSizeIterator
+    for Iter<'_, K, DATA, METADATA>
+{
+}
 
 impl<K> FromIterator<K> for HashSet<K>
 where
