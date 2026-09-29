@@ -13,7 +13,6 @@ allocator_api = []
 serde = ["dep:serde"]
 
 [dependencies]
-rustc-hash = { version = "2", default-features = false }
 serde = { version = "1", default-features = false, optional = true }
 
 [dev-dependencies]

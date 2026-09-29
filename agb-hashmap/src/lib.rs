@@ -31,7 +31,6 @@
 extern crate alloc;
 
 pub(crate) use allocate::{Allocator, Global};
-use rustc_hash::FxHasher;
 
 #[cfg(not(feature = "allocator_api"))]
 mod allocate {
@@ -56,7 +55,6 @@ use core::{
     borrow::Borrow,
     fmt::Debug,
     hash::{Hash, Hasher},
-    num::Wrapping,
     ops::Index,
 };
 
@@ -451,15 +449,14 @@ where
     }
 }
 
-#[expect(clippy::cast_possible_truncation)]
 fn hash<Q>(key: &Q) -> HashType
 where
     Q: Hash + ?Sized,
 {
-    let mut hasher = FxHasher::default();
+    let mut hasher = Hasher32::new();
     key.hash(&mut hasher);
 
-    HashType::bit_mix(hasher.finish() as u32)
+    HashType(hasher.finish32())
 }
 
 /// An iterator over entries of a [`HashMap`]
@@ -861,22 +858,64 @@ impl From<usize> for HashType {
     }
 }
 
-impl HashType {
-    // 32 bit mix function from here: https://github.com/skeeto/hash-prospector
-    fn bit_mix(key: u32) -> Self {
-        let mut key = Wrapping(key);
-        key ^= key >> 16;
-        key *= 0x7feb352d;
-        key ^= key >> 15;
-        key *= 0x846ca68b;
-        key ^= key >> 16;
+struct Hasher32 {
+    state: u32,
+}
 
-        Self(key.0)
+impl Hasher32 {
+    pub(crate) const fn new() -> Self {
+        Self { state: 0 }
     }
 
-    pub(crate) fn fast_mod(self, len: usize) -> usize {
-        debug_assert!(len.is_power_of_two(), "Length must be a power of 2");
-        (self.0 as usize) & (len - 1)
+    pub(crate) const fn finish32(self) -> u32 {
+        self.state
+    }
+
+    fn add(&mut self, value: u32) {
+        self.state = self.state.wrapping_add(value).wrapping_mul(Self::K);
+    }
+
+    const K: u32 = 0x9E3779B9;
+}
+
+impl Hasher for Hasher32 {
+    fn finish(&self) -> u64 {
+        self.state as u64
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        // SAFETY: perfectly fine to align to the boundary here
+        let (prefix, main, suffix) = unsafe { bytes.align_to::<u32>() };
+        prefix.iter().for_each(|byte| self.write_u8(*byte));
+        main.iter().for_each(|word| self.write_u32(*word));
+        suffix.iter().for_each(|byte| self.write_u8(*byte));
+    }
+
+    fn write_u8(&mut self, i: u8) {
+        self.add(i as u32);
+    }
+
+    fn write_u16(&mut self, i: u16) {
+        self.add(i as u32);
+    }
+
+    fn write_u32(&mut self, i: u32) {
+        self.add(i);
+    }
+
+    #[allow(clippy::cast_possible_truncation)]
+    fn write_u64(&mut self, i: u64) {
+        self.add(i as u32);
+        self.add((i >> 32) as u32);
+    }
+
+    #[allow(clippy::cast_possible_truncation)]
+    fn write_usize(&mut self, i: usize) {
+        if usize::BITS > 32 {
+            self.write_u64(i as u64);
+        } else {
+            self.add(i as u32);
+        }
     }
 }
 
@@ -1506,12 +1545,6 @@ mod test {
             assert!(map_str == "{1: 2, 3: 4}" || map_str == "{3: 4, 1: 2}");
             assert_eq!(format!("{empty:?}"), "{}");
         }
-    }
-
-    #[test]
-    fn test_fast_mod() {
-        let h = HashType(10);
-        assert_eq!(h.fast_mod(8), 2);
     }
 
     #[cfg(not(miri))]
