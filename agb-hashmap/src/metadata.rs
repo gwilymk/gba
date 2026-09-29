@@ -8,7 +8,12 @@ pub(crate) struct Metadata<A: Allocator> {
     control: MyVec<Tag, A>,
     slots: MyVec<u16, A>,
 
-    filled_slots: usize,
+    // 32 - log2(slots / 4)
+    group_shift: u8,
+    // EMPTY slots we can use before rehash or grow
+    growth_left: u32,
+    // 1 << size_shift is the total size (minimum 3 so if less than that, this is empty)
+    size_shift: u8,
 }
 
 impl<A: Allocator + Copy> Metadata<A> {
@@ -17,7 +22,9 @@ impl<A: Allocator + Copy> Metadata<A> {
             control: MyVec::new_in(allocator),
             slots: MyVec::new_in(allocator),
 
-            filled_slots: 0,
+            group_shift: 0,
+            growth_left: 0,
+            size_shift: 0,
         }
     }
 
@@ -36,27 +43,43 @@ impl<A: Allocator + Copy> Metadata<A> {
         assert!(size.is_power_of_two());
         assert!(size < u16::MAX as usize);
 
+        let shift = u8::try_from(size.trailing_zeros()).expect("Trailing zeros is at most 32");
+
         let mut control = MyVec::with_capacity_in(size, allocator);
         let mut slots = MyVec::with_capacity_in(size, allocator);
 
         control.resize(size, Tag::EMPTY);
         slots.resize(size, 0);
 
+        let (growth_left, group_shift) = growth_left_and_group_shift(shift);
+
         Self {
             control,
             slots,
-            filled_slots: 0,
+
+            group_shift,
+            growth_left,
+            size_shift: shift,
         }
     }
 
     pub(crate) fn capacity(&self) -> usize {
-        let size = self.control.len();
+        self.capacity_u32() as usize
+    }
+
+    fn capacity_u32(&self) -> u32 {
+        if self.size_shift < 3 {
+            return 0;
+        }
+
+        let size = 1 << self.size_shift;
         size - size / 4
     }
 
     pub(crate) fn clear(&mut self) {
         self.control.fill(Tag::EMPTY);
-        self.filled_slots = 0;
+
+        self.growth_left = self.capacity_u32();
     }
 
     /// Note that f and the return value refer to the location in the metadata, not the location in the hashmap.
@@ -66,7 +89,7 @@ impl<A: Allocator + Copy> Metadata<A> {
         hash: HashType,
         f: impl Fn(SlotId) -> bool,
     ) -> Option<SlotId> {
-        if self.filled_slots == 0 {
+        if self.control.is_empty() {
             // empty hashmap
             return None;
         }
@@ -89,10 +112,10 @@ impl<A: Allocator + Copy> Metadata<A> {
         self.slots[slot_id.0] as usize
     }
 
-    pub(crate) fn check_size(&self, data_entries: usize) -> Result<(), Resize> {
-        if data_entries >= self.capacity() {
+    pub(crate) fn check_size(&self, total_entries: usize) -> Result<(), Resize> {
+        if total_entries >= self.capacity() {
             Err(Resize::Grow)
-        } else if self.filled_slots.saturating_sub(data_entries) > self.capacity() / 2 {
+        } else if self.growth_left == 0 {
             Err(Resize::RehashInPlace)
         } else {
             Ok(())
@@ -100,7 +123,13 @@ impl<A: Allocator + Copy> Metadata<A> {
     }
 
     pub(crate) fn grow(&mut self, hashes: impl Iterator<Item = HashType>) {
-        let new_size = (self.control.len() * 2).max(8);
+        if self.size_shift < 3 {
+            self.size_shift = 3;
+        } else {
+            self.size_shift += 1;
+        }
+        let new_size = 1 << self.size_shift;
+        self.group_shift = growth_left_and_group_shift(self.size_shift).1;
 
         self.control.resize(new_size, Tag::EMPTY);
         self.slots.resize(new_size, 0);
@@ -110,8 +139,7 @@ impl<A: Allocator + Copy> Metadata<A> {
 
     pub(crate) fn rehash_in_place(&mut self, hashes: impl Iterator<Item = HashType>) {
         self.control.fill(Tag::EMPTY);
-        self.slots.fill(0);
-        self.filled_slots = 0;
+        self.growth_left = self.capacity_u32();
 
         for (i, hash) in hashes.enumerate() {
             self.insert_new(hash, i);
@@ -119,6 +147,12 @@ impl<A: Allocator + Copy> Metadata<A> {
     }
 
     pub(crate) fn insert_new(&mut self, hash: HashType, hashmap_table_index: usize) {
+        debug_assert!(
+            self.growth_left > 0,
+            "Should have space to put the entry, capacity: {}",
+            self.capacity()
+        );
+
         let new_tag = Tag::make_full(hash);
 
         let mut index = self.search_start_point(hash);
@@ -129,7 +163,7 @@ impl<A: Allocator + Copy> Metadata<A> {
 
                 // tombstones don't count towards the filled slot count
                 if old_tag == Tag::EMPTY {
-                    self.filled_slots += 1;
+                    self.growth_left -= 1;
                 }
 
                 return;
@@ -175,6 +209,15 @@ impl<A: Allocator + Copy> Metadata<A> {
     }
 }
 
+fn growth_left_and_group_shift(size_shift: u8) -> (u32, u8) {
+    if size_shift == 0 {
+        return (0, 0);
+    }
+
+    let size = 1 << size_shift;
+    (size - size / 4, 32 - size_shift + 2)
+}
+
 pub(crate) enum Resize {
     Grow,
     RehashInPlace,
@@ -186,7 +229,11 @@ pub(crate) struct SlotId(usize);
 
 impl<A: Allocator> Debug for Metadata<A> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "Metadata(filled_slots: {}, data: ", self.filled_slots)?;
+        write!(
+            f,
+            "Metadata(group_shift: {}, growth_left: {}, size_shift: {}, data: ",
+            self.group_shift, self.growth_left, self.size_shift
+        )?;
         for (ctrl, slot) in self.control.iter().zip(self.slots.iter()) {
             write!(f, "{ctrl:?} - {slot}, ")?;
         }

@@ -147,7 +147,11 @@ impl<K, V> HashMap<K, V> {
 
 impl<K, V, DATA: Allocator, METADATA: Allocator + Copy> HashMap<K, V, DATA, METADATA> {
     #[must_use]
-    /// Creates an empty `HashMap` with specified internal size
+    /// Creates an empty `HashMap` with specified internal size. The size must be a power of 2
+    ///
+    /// # Panics
+    ///
+    /// `size` isn't a power of two
     pub fn with_size_in(size: usize, data_alloc: DATA, metadata_alloc: METADATA) -> Self {
         Self {
             metadata: Metadata::with_size(size, metadata_alloc),
