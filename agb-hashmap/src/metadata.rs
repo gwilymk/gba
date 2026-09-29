@@ -1,4 +1,4 @@
-use crate::{Allocator, ClonableAllocator, HashType, metadata::tag::Tag, my_vec::MyVec};
+use crate::{Allocator, HashType, metadata::tag::Tag, my_vec::MyVec};
 
 mod tag;
 
@@ -10,10 +10,10 @@ pub(crate) struct Metadata<A: Allocator> {
     filled_slots: usize,
 }
 
-impl<A: ClonableAllocator> Metadata<A> {
-    pub(crate) fn new_in(allocator: A) -> Self {
+impl<A: Allocator + Copy> Metadata<A> {
+    pub(crate) const fn new_in(allocator: A) -> Self {
         Self {
-            control: MyVec::new_in(allocator.clone()),
+            control: MyVec::new_in(allocator),
             slots: MyVec::new_in(allocator),
 
             filled_slots: 0,
@@ -35,7 +35,7 @@ impl<A: ClonableAllocator> Metadata<A> {
         assert!(size.is_power_of_two());
         assert!(size < u16::MAX as usize);
 
-        let mut control = MyVec::with_capacity_in(size, allocator.clone());
+        let mut control = MyVec::with_capacity_in(size, allocator);
         let mut slots = MyVec::with_capacity_in(size, allocator);
 
         control.resize(size, Tag::EMPTY);

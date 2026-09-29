@@ -131,14 +131,10 @@ struct HashMapNode<K, V> {
     value: V,
 }
 
-/// Trait for allocators that are cloneable.
-pub trait ClonableAllocator: Allocator + Clone {}
-impl<T: Allocator + Clone> ClonableAllocator for T {}
-
 impl<K, V> HashMap<K, V> {
     /// Creates a `HashMap`
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self::new_in(Global, Global)
     }
 
@@ -149,7 +145,7 @@ impl<K, V> HashMap<K, V> {
     }
 }
 
-impl<K, V, DATA: ClonableAllocator, METADATA: ClonableAllocator> HashMap<K, V, DATA, METADATA> {
+impl<K, V, DATA: Allocator, METADATA: Allocator + Copy> HashMap<K, V, DATA, METADATA> {
     #[must_use]
     /// Creates an empty `HashMap` with specified internal size
     pub fn with_size_in(size: usize, data_alloc: DATA, metadata_alloc: METADATA) -> Self {
@@ -161,7 +157,7 @@ impl<K, V, DATA: ClonableAllocator, METADATA: ClonableAllocator> HashMap<K, V, D
 
     #[must_use]
     /// Creates a `HashMap` with a specified allocator for data and metadata
-    pub fn new_in(data_alloc: DATA, metadata_alloc: METADATA) -> Self {
+    pub const fn new_in(data_alloc: DATA, metadata_alloc: METADATA) -> Self {
         Self {
             metadata: Metadata::new_in(metadata_alloc),
             data: MyVec::new_in(data_alloc),
@@ -281,7 +277,7 @@ impl<K, V> Default for HashMap<K, V> {
     }
 }
 
-impl<K, V, DATA: ClonableAllocator, METADATA: ClonableAllocator> HashMap<K, V, DATA, METADATA>
+impl<K, V, DATA: Allocator, METADATA: Allocator + Copy> HashMap<K, V, DATA, METADATA>
 where
     K: Eq + Hash,
 {
@@ -455,12 +451,12 @@ where
 ///
 /// This struct is created using the `into_iter()` method on [`HashMap`]. See its
 /// documentation for more.
-pub struct Iter<'a, K: 'a, V: 'a, DATA: ClonableAllocator, METADATA: ClonableAllocator> {
+pub struct Iter<'a, K: 'a, V: 'a, DATA: Allocator, METADATA: Allocator> {
     map: &'a HashMap<K, V, DATA, METADATA>,
     at: usize,
 }
 
-impl<'a, K, V, DATA: ClonableAllocator, METADATA: ClonableAllocator> Iterator
+impl<'a, K, V, DATA: Allocator, METADATA: Allocator + Copy> Iterator
     for Iter<'a, K, V, DATA, METADATA>
 {
     type Item = (&'a K, &'a V);
@@ -480,12 +476,12 @@ impl<'a, K, V, DATA: ClonableAllocator, METADATA: ClonableAllocator> Iterator
     }
 }
 
-impl<K, V, DATA: ClonableAllocator, METADATA: ClonableAllocator> ExactSizeIterator
+impl<K, V, DATA: Allocator, METADATA: Allocator + Copy> ExactSizeIterator
     for Iter<'_, K, V, DATA, METADATA>
 {
 }
 
-impl<'a, K, V, DATA: ClonableAllocator, METADATA: ClonableAllocator> IntoIterator
+impl<'a, K, V, DATA: Allocator, METADATA: Allocator + Copy> IntoIterator
     for &'a HashMap<K, V, DATA, METADATA>
 {
     type Item = (&'a K, &'a V);
@@ -500,11 +496,11 @@ impl<'a, K, V, DATA: ClonableAllocator, METADATA: ClonableAllocator> IntoIterato
 ///
 /// This struct is created using the `into_iter()` method on [`HashMap`] as part of its implementation
 /// of the `IntoIterator` trait.
-pub struct IterOwned<K, V, DATA: ClonableAllocator, METADATA: ClonableAllocator> {
+pub struct IterOwned<K, V, DATA: Allocator, METADATA: Allocator> {
     map: HashMap<K, V, DATA, METADATA>,
 }
 
-impl<K, V, DATA: ClonableAllocator, METADATA: ClonableAllocator> Iterator
+impl<K, V, DATA: Allocator, METADATA: Allocator + Copy> Iterator
     for IterOwned<K, V, DATA, METADATA>
 {
     type Item = (K, V);
@@ -519,7 +515,7 @@ impl<K, V, DATA: ClonableAllocator, METADATA: ClonableAllocator> Iterator
     }
 }
 
-impl<K, V, DATA: ClonableAllocator, METADATA: ClonableAllocator> ExactSizeIterator
+impl<K, V, DATA: Allocator, METADATA: Allocator + Copy> ExactSizeIterator
     for IterOwned<K, V, DATA, METADATA>
 {
 }
@@ -528,7 +524,7 @@ impl<K, V, DATA: ClonableAllocator, METADATA: ClonableAllocator> ExactSizeIterat
 ///
 /// This struct is created using the `into_iter()` method on [`HashMap`] as part of its implementation
 /// of the `IntoIterator` trait.
-impl<K, V, DATA: ClonableAllocator, METADATA: ClonableAllocator> IntoIterator
+impl<K, V, DATA: Allocator, METADATA: Allocator + Copy> IntoIterator
     for HashMap<K, V, DATA, METADATA>
 {
     type Item = (K, V);
@@ -542,16 +538,16 @@ impl<K, V, DATA: ClonableAllocator, METADATA: ClonableAllocator> IntoIterator
 mod entries {
     use core::hash::Hash;
 
-    use super::{ClonableAllocator, HashMap, HashType};
+    use super::{Allocator, HashMap, HashType};
 
     /// A view into an occupied entry in a `HashMap`. This is part of the [`crate::Entry`] enum.
-    pub struct OccupiedEntry<'a, K: 'a, V: 'a, DATA: ClonableAllocator, METADATA: ClonableAllocator> {
+    pub struct OccupiedEntry<'a, K: 'a, V: 'a, DATA: Allocator, METADATA: Allocator> {
         key: K,
         map: &'a mut HashMap<K, V, DATA, METADATA>,
         location: usize,
     }
 
-    impl<'a, K: 'a, V: 'a, DATA: ClonableAllocator, METADATA: ClonableAllocator>
+    impl<'a, K: 'a, V: 'a, DATA: Allocator, METADATA: Allocator + Copy>
         OccupiedEntry<'a, K, V, DATA, METADATA>
     {
         pub(crate) fn new(
@@ -618,13 +614,13 @@ mod entries {
     }
 
     /// A view into a vacant entry in a `HashMap`. It is part of the [`crate::Entry`] enum.
-    pub struct VacantEntry<'a, K: 'a, V: 'a, DATA: ClonableAllocator, METADATA: ClonableAllocator> {
+    pub struct VacantEntry<'a, K: 'a, V: 'a, DATA: Allocator, METADATA: Allocator> {
         key: K,
         map: &'a mut HashMap<K, V, DATA, METADATA>,
         hash: HashType,
     }
 
-    impl<'a, K: 'a, V: 'a, DATA: ClonableAllocator, METADATA: ClonableAllocator>
+    impl<'a, K: 'a, V: 'a, DATA: Allocator, METADATA: Allocator + Copy>
         VacantEntry<'a, K, V, DATA, METADATA>
     {
         pub(crate) fn new(
@@ -664,14 +660,14 @@ use crate::metadata::{Metadata, Resize};
 /// This is constructed using the [`entry`] method on [`HashMap`]
 ///
 /// [`entry`]: HashMap::entry()
-pub enum Entry<'a, K: 'a, V: 'a, DATA: ClonableAllocator, METADATA: ClonableAllocator> {
+pub enum Entry<'a, K: 'a, V: 'a, DATA: Allocator, METADATA: Allocator> {
     /// An occupied entry
     Occupied(OccupiedEntry<'a, K, V, DATA, METADATA>),
     /// A vacant entry
     Vacant(VacantEntry<'a, K, V, DATA, METADATA>),
 }
 
-impl<'a, K, V, DATA: ClonableAllocator, METADATA: ClonableAllocator> Entry<'a, K, V, DATA, METADATA>
+impl<'a, K, V, DATA: Allocator, METADATA: Allocator + Copy> Entry<'a, K, V, DATA, METADATA>
 where
     K: Hash + Eq,
 {
@@ -752,7 +748,7 @@ where
     }
 }
 
-impl<K, V, DATA: ClonableAllocator, METADATA: ClonableAllocator> HashMap<K, V, DATA, METADATA>
+impl<K, V, DATA: Allocator, METADATA: Allocator + Copy> HashMap<K, V, DATA, METADATA>
 where
     K: Hash + Eq,
 {
@@ -794,7 +790,7 @@ where
     }
 }
 
-impl<K, V, Q, ALLOCATOR: ClonableAllocator> Index<&Q> for HashMap<K, V, ALLOCATOR>
+impl<K, V, Q, ALLOCATOR: Allocator> Index<&Q> for HashMap<K, V, ALLOCATOR>
 where
     K: Eq + Hash + Borrow<Q>,
     Q: Eq + Hash + ?Sized,
@@ -806,7 +802,7 @@ where
     }
 }
 
-impl<K, V, ALLOCATOR: ClonableAllocator> PartialEq for HashMap<K, V, ALLOCATOR>
+impl<K, V, ALLOCATOR: Allocator> PartialEq for HashMap<K, V, ALLOCATOR>
 where
     K: Eq + Hash,
     V: PartialEq,
@@ -821,14 +817,14 @@ where
     }
 }
 
-impl<K, V, ALLOCATOR: ClonableAllocator> Eq for HashMap<K, V, ALLOCATOR>
+impl<K, V, ALLOCATOR: Allocator> Eq for HashMap<K, V, ALLOCATOR>
 where
     K: Eq + Hash,
     V: PartialEq,
 {
 }
 
-impl<K, V, ALLOCATOR: ClonableAllocator> Debug for HashMap<K, V, ALLOCATOR>
+impl<K, V, ALLOCATOR: Allocator> Debug for HashMap<K, V, ALLOCATOR>
 where
     K: Debug,
     V: Debug,

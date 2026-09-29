@@ -5,14 +5,12 @@ use serde::{
     ser::SerializeMap,
 };
 
-use crate::{ClonableAllocator, HashMap, HashSet};
+use crate::{Allocator, HashMap, HashSet};
 
 mod hashmap {
     use super::*;
 
-    impl<K: Serialize, V: Serialize, ALLOCATOR: ClonableAllocator> Serialize
-        for HashMap<K, V, ALLOCATOR>
-    {
+    impl<K: Serialize, V: Serialize, ALLOCATOR: Allocator> Serialize for HashMap<K, V, ALLOCATOR> {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: serde::Serializer,
@@ -82,7 +80,7 @@ mod hashset {
 
     use super::*;
 
-    impl<K: Serialize, ALLOCATOR: ClonableAllocator> Serialize for HashSet<K, ALLOCATOR> {
+    impl<K: Serialize, ALLOCATOR: Allocator> Serialize for HashSet<K, ALLOCATOR> {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: serde::Serializer,
