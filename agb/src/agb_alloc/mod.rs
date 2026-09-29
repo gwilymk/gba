@@ -91,7 +91,7 @@ pub(crate) use impl_zst_allocator;
 /// );
 /// # }
 /// ```
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct ExternalAllocator;
 
 impl_zst_allocator!(ExternalAllocator, GLOBAL_ALLOC);
@@ -126,7 +126,7 @@ impl_zst_allocator!(ExternalAllocator, GLOBAL_ALLOC);
 /// );
 /// # }
 /// ```
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct InternalAllocator;
 
 impl_zst_allocator!(InternalAllocator, __IWRAM_ALLOC);

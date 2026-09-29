@@ -4,7 +4,10 @@ use sprite::SpriteVramInner;
 pub use dynamic::{DynamicSprite16, DynamicSprite256};
 pub use sprite::SpriteVram;
 
-use crate::{display::palette16::Palette16, hash_map::HashMap, util::SyncUnsafeCell};
+use crate::{
+    ExternalAllocator, InternalAllocator, display::palette16::Palette16, hash_map::HashMap,
+    util::SyncUnsafeCell,
+};
 
 use super::sprite::{Palette, PaletteMulti, Sprite};
 
@@ -47,8 +50,8 @@ impl PaletteId {
 
 /// This holds loading of static sprites and palettes.
 struct SpriteLoaderInner {
-    palettes: HashMap<PaletteId, PaletteVram>,
-    sprites: HashMap<SpriteId, SpriteVramInner>,
+    palettes: HashMap<PaletteId, PaletteVram, ExternalAllocator, InternalAllocator>,
+    sprites: HashMap<SpriteId, SpriteVramInner, ExternalAllocator, InternalAllocator>,
 }
 
 #[non_exhaustive]
@@ -61,8 +64,8 @@ pub enum LoaderError {
 impl SpriteLoaderInner {
     pub(crate) const fn new() -> Self {
         Self {
-            palettes: HashMap::new(),
-            sprites: HashMap::new(),
+            palettes: HashMap::new_in(ExternalAllocator, InternalAllocator),
+            sprites: HashMap::new_in(ExternalAllocator, InternalAllocator),
         }
     }
 

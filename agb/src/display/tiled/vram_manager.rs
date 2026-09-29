@@ -10,6 +10,7 @@ use tile_allocator::TileAllocator;
 mod tile_allocator;
 
 use crate::{
+    ExternalAllocator, InternalAllocator,
     display::{Palette16, Rgb15},
     dma,
     hash_map::{Entry, HashMap},
@@ -704,7 +705,8 @@ impl VRamManager {
 }
 
 struct VRamManagerInner {
-    tile_set_to_vram: HashMap<TileInTileSetReference, TileReference>,
+    tile_set_to_vram:
+        HashMap<TileInTileSetReference, TileReference, ExternalAllocator, InternalAllocator>,
     reference_counts: Vec<TileReferenceCount>,
 
     lookup_cache: [(TileInTileSetReference, TileReference); 8],
@@ -725,7 +727,7 @@ const EMPTY_CACHE_ENTRY: (TileInTileSetReference, TileReference) = (
 
 impl VRamManagerInner {
     const unsafe fn new() -> Self {
-        let tile_set_to_vram: HashMap<TileInTileSetReference, TileReference> = HashMap::new();
+        let tile_set_to_vram = HashMap::new_in(ExternalAllocator, InternalAllocator);
 
         Self {
             tile_set_to_vram,

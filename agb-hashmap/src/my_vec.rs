@@ -62,7 +62,7 @@ mod inner {
 
     impl<T, A: Allocator> MyVec<T, A> {
         pub(crate) fn with_capacity_in(capacity: usize, allocator: A) -> Self {
-            Self(Vec::with_capacity_in(capacity, alloc))
+            Self(Vec::with_capacity_in(capacity, allocator))
         }
 
         pub(crate) const fn new_in(allocator: A) -> Self {

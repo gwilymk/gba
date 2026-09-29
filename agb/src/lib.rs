@@ -672,6 +672,10 @@ pub mod test_runner {
 mod test {
     use core::ptr::addr_of_mut;
 
+    use agb_hashmap::HashMap;
+
+    use crate::{ExternalAllocator, InternalAllocator, rng};
+
     use super::Gba;
 
     #[test_case]
@@ -753,5 +757,24 @@ mod test {
             let c = iwram_ptr.read_volatile();
             assert_eq!(c, u32::MAX, "expected content to be {}", u32::MAX);
         }
+    }
+
+    #[test_case]
+    fn benchmark_hashmap(_gba: &mut Gba) {
+        let mut hashmap = HashMap::new_in(ExternalAllocator, InternalAllocator);
+
+        let mut rng = rng::RandomNumberGenerator::new_with_seed([0, 0, 0, 1]);
+        for _ in 0..10000 {
+            let operation = rng.next_i32();
+            if operation & 1 == 0 {
+                let key = rng.next_i32().rem_euclid(512);
+                hashmap.insert(key, 20);
+            } else {
+                let key = rng.next_i32().rem_euclid(512);
+                hashmap.remove(&key);
+            }
+        }
+
+        core::hint::black_box(hashmap);
     }
 }
