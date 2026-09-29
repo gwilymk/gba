@@ -233,11 +233,18 @@ impl<K, V, DATA: Allocator, METADATA: Allocator + Copy> HashMap<K, V, DATA, META
     }
 
     /// Retains only the elements specified by the predicate `f`.
-    pub fn retain<F>(&mut self, f: F)
+    pub fn retain<F>(&mut self, mut f: F)
     where
         F: FnMut(&K, &mut V) -> bool,
     {
-        todo!()
+        let len_before_retain = self.data.len();
+        self.data.retain_mut(|kv| f(&kv.key, &mut kv.value));
+        let len_after_retain = self.data.len();
+
+        if len_before_retain != len_after_retain {
+            self.metadata
+                .rehash_in_place(self.data.iter().map(|kv| kv.hash));
+        }
     }
 
     /// Returns `true` if the map contains no elements
