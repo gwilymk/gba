@@ -256,7 +256,7 @@ impl<K, V, DATA: Allocator, METADATA: Allocator + Copy> HashMap<K, V, DATA, META
     /// # Panics
     ///
     /// If the location doesn't actually exist
-    fn remove_from_internal_location(&mut self, location: usize) -> HashMapNode<K, V> {
+    fn remove_from_internal_location(&mut self, location: SlotId) -> HashMapNode<K, V> {
         self.metadata.tombstone(location);
         let location = self.metadata.unwrap_slot(location);
 
@@ -410,7 +410,7 @@ where
             self.data[node_id].key.borrow() == key
         })?;
 
-        let data = &mut self.data[location];
+        let data = &mut self.data[self.metadata.unwrap_slot(location)];
 
         Some(&mut data.value)
     }
@@ -545,13 +545,13 @@ impl<K, V, DATA: Allocator, METADATA: Allocator + Copy> IntoIterator
 mod entries {
     use core::hash::Hash;
 
-    use super::{Allocator, HashMap, HashType};
+    use super::{Allocator, HashMap, HashType, SlotId};
 
     /// A view into an occupied entry in a `HashMap`. This is part of the [`crate::Entry`] enum.
     pub struct OccupiedEntry<'a, K: 'a, V: 'a, DATA: Allocator, METADATA: Allocator> {
         key: K,
         map: &'a mut HashMap<K, V, DATA, METADATA>,
-        location: usize,
+        location: SlotId,
     }
 
     impl<'a, K: 'a, V: 'a, DATA: Allocator, METADATA: Allocator + Copy>
@@ -560,7 +560,7 @@ mod entries {
         pub(crate) fn new(
             key: K,
             map: &'a mut HashMap<K, V, DATA, METADATA>,
-            location: usize,
+            location: SlotId,
         ) -> Self {
             Self { key, map, location }
         }
@@ -660,7 +660,7 @@ mod entries {
 
 pub use entries::{OccupiedEntry, VacantEntry};
 
-use crate::metadata::{Metadata, Resize};
+use crate::metadata::{Metadata, Resize, SlotId};
 
 /// A view into a single entry in a map, which may be vacant or occupied.
 ///

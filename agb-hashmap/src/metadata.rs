@@ -63,8 +63,8 @@ impl<A: Allocator + Copy> Metadata<A> {
     pub(crate) fn find_entry_matching(
         &self,
         hash: HashType,
-        f: impl Fn(usize) -> bool,
-    ) -> Option<usize> {
+        f: impl Fn(SlotId) -> bool,
+    ) -> Option<SlotId> {
         if self.filled_slots == 0 {
             // empty hashmap
             return None;
@@ -73,19 +73,19 @@ impl<A: Allocator + Copy> Metadata<A> {
         let search_tag = Tag::make_full(hash);
 
         let mut index = self.search_start_point(hash);
-        while self.control[index] != Tag::EMPTY {
-            if self.control[index] == search_tag && f(index) {
+        while self.control[index.0] != Tag::EMPTY {
+            if self.control[index.0] == search_tag && f(index) {
                 return Some(index);
             }
 
-            index = (index + 1) & (self.control.len() - 1);
+            index = SlotId((index.0 + 1) & (self.control.len() - 1));
         }
 
         None
     }
 
-    pub(crate) fn unwrap_slot(&self, slot_id: usize) -> usize {
-        self.slots[slot_id] as usize
+    pub(crate) fn unwrap_slot(&self, slot_id: SlotId) -> usize {
+        self.slots[slot_id.0] as usize
     }
 
     pub(crate) fn check_size(&self, data_entries: usize) -> Result<(), Resize> {
@@ -125,8 +125,8 @@ impl<A: Allocator + Copy> Metadata<A> {
 
         let mut index = self.search_start_point(hash);
         loop {
-            if !self.control[index].has_entry() {
-                let old_tag = core::mem::replace(&mut self.control[index], new_tag);
+            if !self.control[index.0].has_entry() {
+                let old_tag = core::mem::replace(&mut self.control[index.0], new_tag);
                 self.set_slot_id(index, hashmap_table_index);
 
                 // tombstones don't count towards the filled slot count
@@ -137,21 +137,21 @@ impl<A: Allocator + Copy> Metadata<A> {
                 return;
             }
 
-            index = (index + 1) & (self.control.len() - 1);
+            index = SlotId((index.0 + 1) & (self.control.len() - 1));
         }
     }
 
-    fn search_start_point(&self, hash: HashType) -> usize {
-        hash.fast_mod(self.control.len())
+    fn search_start_point(&self, hash: HashType) -> SlotId {
+        SlotId(hash.fast_mod(self.control.len()))
     }
 
-    pub(crate) fn tombstone(&mut self, location: usize) {
-        self.control[location] = Tag::TOMBSTONE;
+    pub(crate) fn tombstone(&mut self, location: SlotId) {
+        self.control[location.0] = Tag::TOMBSTONE;
     }
 
     #[expect(clippy::cast_possible_truncation)]
-    pub(crate) fn set_slot_id(&mut self, metadata_slot: usize, data_slot: usize) {
-        self.slots[metadata_slot] = data_slot as u16;
+    pub(crate) fn set_slot_id(&mut self, metadata_slot: SlotId, data_slot: usize) {
+        self.slots[metadata_slot.0] = data_slot as u16;
     }
 }
 
@@ -159,3 +159,7 @@ pub(crate) enum Resize {
     Grow,
     RehashInPlace,
 }
+
+#[repr(transparent)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SlotId(usize);
