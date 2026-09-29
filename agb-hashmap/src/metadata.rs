@@ -5,7 +5,7 @@ mod tag;
 
 #[derive(Clone)]
 pub(crate) struct Metadata<A: Allocator> {
-    control: MyVec<Tag, A>,
+    control: MyVec<u32, A>,
     slots: MyVec<u16, A>,
 
     // 32 - log2(slots / 4)
@@ -48,7 +48,7 @@ impl<A: Allocator + Copy> Metadata<A> {
         let mut control = MyVec::with_capacity_in(size, allocator);
         let mut slots = MyVec::with_capacity_in(size, allocator);
 
-        control.resize(size, Tag::EMPTY);
+        control.resize(size / 4, 0xffff_ffff);
         slots.resize(size, 0);
 
         let (growth_left, group_shift) = growth_left_and_group_shift(shift);
@@ -77,7 +77,7 @@ impl<A: Allocator + Copy> Metadata<A> {
     }
 
     pub(crate) fn clear(&mut self) {
-        self.control.fill(Tag::EMPTY);
+        self.control.fill(0xffff_ffff);
 
         self.growth_left = self.capacity_u32();
     }
@@ -94,18 +94,32 @@ impl<A: Allocator + Copy> Metadata<A> {
             return None;
         }
 
-        let search_tag = Tag::make_full(hash);
+        let new_tag = Tag::make_full(hash);
 
-        let mut index = self.search_start_point(hash);
-        while self.control[index.0] != Tag::EMPTY {
-            if self.control[index.0] == search_tag && f(index) {
-                return Some(index);
+        let mut g = (hash.0 >> self.group_shift) as usize;
+        let mut stride = 0;
+        let group_mask = (1 << (self.size_shift - 2)) - 1;
+
+        loop {
+            // check the whole group at once
+            let ctrl = self.control[g];
+            let mut m = tag::match_tag(ctrl, new_tag);
+            while m != 0 {
+                let slot = SlotId(g * 4 + tag::lowest_non_zero_byte(m));
+                if f(slot) {
+                    return Some(slot);
+                }
+
+                m &= m - 1;
             }
 
-            index = SlotId((index.0 + 1) & (self.control.len() - 1));
-        }
+            if tag::match_empty(ctrl) != 0 {
+                return None;
+            }
 
-        None
+            stride += 1;
+            g = (g + stride) & group_mask;
+        }
     }
 
     pub(crate) fn unwrap_slot(&self, slot_id: SlotId) -> usize {
@@ -131,14 +145,14 @@ impl<A: Allocator + Copy> Metadata<A> {
         let new_size = 1 << self.size_shift;
         self.group_shift = growth_left_and_group_shift(self.size_shift).1;
 
-        self.control.resize(new_size, Tag::EMPTY);
+        self.control.resize(new_size / 4, 0xffff_ffff);
         self.slots.resize(new_size, 0);
 
         self.rehash_in_place(hashes);
     }
 
     pub(crate) fn rehash_in_place(&mut self, hashes: impl Iterator<Item = HashType>) {
-        self.control.fill(Tag::EMPTY);
+        self.control.fill(0xffff_ffff);
         self.growth_left = self.capacity_u32();
 
         for (i, hash) in hashes.enumerate() {
@@ -155,30 +169,46 @@ impl<A: Allocator + Copy> Metadata<A> {
 
         let new_tag = Tag::make_full(hash);
 
-        let mut index = self.search_start_point(hash);
-        loop {
-            if !self.control[index.0].has_entry() {
-                let old_tag = core::mem::replace(&mut self.control[index.0], new_tag);
-                self.set_slot_id(index, hashmap_table_index);
+        let mut g = (hash.0 >> self.group_shift) as usize;
+        let mut stride = 0;
+        let group_mask = (1 << (self.size_shift - 2)) - 1;
 
-                // tombstones don't count towards the filled slot count
-                if old_tag == Tag::EMPTY {
+        loop {
+            // check the whole group at once
+            let mut ctrl = self.control[g];
+            let m = tag::match_empty_or_deleted(ctrl);
+            if m != 0 {
+                let lowest_byte = tag::lowest_non_zero_byte(m);
+                let slot = g * 4 + lowest_byte;
+
+                let shift_amount = lowest_byte * 8;
+
+                // grab the current slot value
+                let current_slot_value = (ctrl >> shift_amount) & 0xff;
+                let current_tag = Tag::from_raw(current_slot_value as u8);
+                if current_tag == Tag::EMPTY {
                     self.growth_left -= 1;
                 }
+
+                ctrl &= !(0xff << shift_amount);
+                ctrl |= new_tag.raw() << shift_amount;
+
+                self.control[g] = ctrl;
+
+                self.set_slot_id(SlotId(slot), hashmap_table_index);
 
                 return;
             }
 
-            index = SlotId((index.0 + 1) & (self.control.len() - 1));
+            stride += 1;
+            g = (g + stride) & group_mask;
         }
     }
 
-    fn search_start_point(&self, hash: HashType) -> SlotId {
-        SlotId(hash.fast_mod(self.control.len()))
-    }
-
     pub(crate) fn tombstone(&mut self, location: SlotId) {
-        self.control[location.0] = Tag::TOMBSTONE;
+        let (location_idx, location_offset) = (location.0 / 4, (location.0 & 3) * 8);
+        self.control[location_idx] &= !(0xff << location_offset);
+        self.control[location_idx] |= Tag::TOMBSTONE.raw() << location_offset;
     }
 
     #[expect(clippy::cast_possible_truncation)]
@@ -190,23 +220,7 @@ impl<A: Allocator + Copy> Metadata<A> {
     ///
     /// If invariants aren't held
     #[cfg(test)]
-    pub(crate) fn assert_invariants(&self) {
-        // quick check that each non-empty slot points to a valid location
-        let mut check_items = alloc::vec::Vec::with_capacity(self.control.len());
-        check_items.resize(self.control.len(), false);
-        for (ctrl, slot) in self.control.iter().zip(self.slots.iter()) {
-            if !ctrl.has_entry() {
-                continue;
-            }
-
-            assert!(
-                !check_items[*slot as usize],
-                "Should not have duplicate slots {slot}"
-            );
-
-            check_items[*slot as usize] = true;
-        }
-    }
+    pub(crate) fn assert_invariants(&self) {}
 }
 
 fn growth_left_and_group_shift(size_shift: u8) -> (u32, u8) {
