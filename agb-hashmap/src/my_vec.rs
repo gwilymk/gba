@@ -13,6 +13,12 @@ mod inner {
     #[derive(Clone)]
     pub(crate) struct MyVec<T, A: Allocator = Global>(Vec<T>, A);
 
+    impl<T: core::fmt::Debug, A: Allocator> core::fmt::Debug for MyVec<T, A> {
+        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            f.debug_list().entries(&self.0).finish()
+        }
+    }
+
     impl<T, A: Allocator> MyVec<T, A> {
         pub(crate) fn with_capacity_in(capacity: usize, allocator: A) -> Self {
             Self(Vec::with_capacity(capacity), allocator)
@@ -47,6 +53,12 @@ mod inner {
 
     #[derive(Clone)]
     pub(crate) struct MyVec<T, A: Allocator = Global>(Vec<T, A>);
+
+    impl<T: core::fmt::Debug, A: Allocator> core::fmt::Debug for MyVec<T, A> {
+        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            f.debug_list().entries(&self.0).finish()
+        }
+    }
 
     impl<T, A: Allocator> MyVec<T, A> {
         pub(crate) fn with_capacity_in(capacity: usize, allocator: A) -> Self {

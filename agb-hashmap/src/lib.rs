@@ -317,14 +317,18 @@ where
         self.data.push(HashMapNode { hash, key, value });
 
         match self.metadata.check_size(idx + 1) {
-            Err(Resize::Grow) => self.metadata.grow(self.data.iter().map(|node| node.hash)),
-            Err(Resize::RehashInPlace) => self
-                .metadata
-                .rehash_in_place(self.data.iter().map(|node| node.hash)),
-            Ok(_) => {}
+            Err(Resize::Grow) => {
+                self.metadata.grow(self.data.iter().map(|node| node.hash));
+            }
+            Err(Resize::RehashInPlace) => {
+                self.metadata
+                    .rehash_in_place(self.data.iter().map(|node| node.hash));
+            }
+            Ok(_) => {
+                self.metadata.insert_new(hash, idx);
+            }
         }
 
-        self.metadata.insert_new(hash, idx);
         &mut self.data[idx].value
     }
 
@@ -883,7 +887,6 @@ impl core::ops::Add<i32> for HashType {
 #[cfg(test)]
 mod test {
     #![allow(clippy::missing_panics_doc)]
-
     use core::{cell::RefCell, hash::Hasher};
 
     use alloc::vec::Vec;
@@ -1095,9 +1098,6 @@ mod test {
             let key = rng.next_i32().rem_euclid(answers.len().try_into().unwrap());
             let value = rng.next_i32();
 
-            extern crate std;
-            std::dbg!(command, key, value);
-
             match command {
                 0 => {
                     // insert
@@ -1121,6 +1121,7 @@ mod test {
             }
 
             assert!(map.capacity() >= map.len());
+            map.metadata.assert_invariants();
         }
     }
 

@@ -1,4 +1,5 @@
 use crate::{Allocator, HashType, metadata::tag::Tag, my_vec::MyVec};
+use core::fmt::Debug;
 
 mod tag;
 
@@ -91,7 +92,7 @@ impl<A: Allocator + Copy> Metadata<A> {
     pub(crate) fn check_size(&self, data_entries: usize) -> Result<(), Resize> {
         if data_entries >= self.capacity() {
             Err(Resize::Grow)
-        } else if self.filled_slots - data_entries > self.capacity() / 2 {
+        } else if self.filled_slots.saturating_sub(data_entries) > self.capacity() / 2 {
             Err(Resize::RehashInPlace)
         } else {
             Ok(())
@@ -99,7 +100,6 @@ impl<A: Allocator + Copy> Metadata<A> {
     }
 
     pub(crate) fn grow(&mut self, hashes: impl Iterator<Item = HashType>) {
-        self.filled_slots = 0;
         let new_size = (self.control.len() * 2).max(8);
 
         self.control.resize(new_size, Tag::EMPTY);
@@ -109,11 +109,9 @@ impl<A: Allocator + Copy> Metadata<A> {
     }
 
     pub(crate) fn rehash_in_place(&mut self, hashes: impl Iterator<Item = HashType>) {
-        extern crate std;
-        std::dbg!("Rehashing");
-
         self.control.fill(Tag::EMPTY);
         self.slots.fill(0);
+        self.filled_slots = 0;
 
         for (i, hash) in hashes.enumerate() {
             self.insert_new(hash, i);
@@ -153,6 +151,28 @@ impl<A: Allocator + Copy> Metadata<A> {
     pub(crate) fn set_slot_id(&mut self, metadata_slot: SlotId, data_slot: usize) {
         self.slots[metadata_slot.0] = data_slot as u16;
     }
+
+    /// # Panics
+    ///
+    /// If invariants aren't held
+    #[cfg(test)]
+    pub(crate) fn assert_invariants(&self) {
+        // quick check that each non-empty slot points to a valid location
+        let mut check_items = alloc::vec::Vec::with_capacity(self.control.len());
+        check_items.resize(self.control.len(), false);
+        for (ctrl, slot) in self.control.iter().zip(self.slots.iter()) {
+            if !ctrl.has_entry() {
+                continue;
+            }
+
+            assert!(
+                !check_items[*slot as usize],
+                "Should not have duplicate slots {slot}"
+            );
+
+            check_items[*slot as usize] = true;
+        }
+    }
 }
 
 pub(crate) enum Resize {
@@ -161,5 +181,16 @@ pub(crate) enum Resize {
 }
 
 #[repr(transparent)]
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SlotId(usize);
+
+impl<A: Allocator> Debug for Metadata<A> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "Metadata(filled_slots: {}, data: ", self.filled_slots)?;
+        for (ctrl, slot) in self.control.iter().zip(self.slots.iter()) {
+            write!(f, "{ctrl:?} - {slot}, ")?;
+        }
+
+        write!(f, ")")
+    }
+}
