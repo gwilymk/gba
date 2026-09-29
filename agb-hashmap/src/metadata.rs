@@ -94,7 +94,7 @@ impl<A: Allocator + Copy> Metadata<A> {
             return None;
         }
 
-        let new_tag = Tag::make_full(hash);
+        let new_tag = Tag::make_full(hash, self.group_shift);
 
         let mut g = (hash.0 >> self.group_shift) as usize;
         let mut stride = 0;
@@ -167,7 +167,7 @@ impl<A: Allocator + Copy> Metadata<A> {
             self.capacity()
         );
 
-        let new_tag = Tag::make_full(hash);
+        let new_tag = Tag::make_full(hash, self.group_shift);
 
         let mut g = (hash.0 >> self.group_shift) as usize;
         let mut stride = 0;
